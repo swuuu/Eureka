@@ -367,7 +367,7 @@ class ShadowHandGPT(VecTask):
         self.goal_object_indices = to_torch(self.goal_object_indices, dtype=torch.long, device=self.device)
 
     def compute_reward(self, actions):
-        self.rew_buf[:], self.rew_dict = compute_reward(self.object_rot, self.goal_rot, self.fingertip_pos, self.object_pos)
+        self.rew_buf[:], self.rew_dict = quat_mul(self.q1, self.q2)
         self.extras['gpt_reward'] = self.rew_buf.mean()
         for rew_state in self.rew_dict: self.extras[rew_state] = self.rew_dict[rew_state].mean()
         self.rew_buf[:] = compute_bonus(
@@ -763,32 +763,11 @@ import math
 import torch
 from torch import Tensor
 @torch.jit.script
-def compute_reward(object_rot: torch.Tensor, goal_rot: torch.Tensor, fingertip_pos: torch.Tensor, object_pos: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-    device = object_rot.device
-    
-    # Distance between object rotation and goal rotation
-    object_goal_rot_diff = torch.norm(object_rot - goal_rot, dim=1)
-    
-    # Distance between each fingertip and the object
-    fingertip_object_diff = torch.norm(fingertip_pos - object_pos.unsqueeze(1), dim=2)
-    avg_fingertip_object_diff = fingertip_object_diff.mean(dim=1)
-    
-    # Reward Components
-    rot_reward = -object_goal_rot_diff
-    fingertip_reward = -avg_fingertip_object_diff
-    
-    # Temperature parameters for reward normalization
-    rot_temperature = torch.tensor(1.0).to(device)
-    fingertip_temperature = torch.tensor(1.0).to(device)
-    
-    # Normalize reward components using exponential function
-    rot_reward_normalized = torch.exp(rot_reward / rot_temperature)
-    fingertip_reward_normalized = torch.exp(fingertip_reward / fingertip_temperature)
-    
-    # Combine normalized rewards
-    total_reward = rot_reward_normalized + fingertip_reward_normalized
-    
-    # Store individual reward components in a dictionary
-    reward_dict = {"rot_reward": rot_reward_normalized, "fingertip_reward": fingertip_reward_normalized}
-    
-    return total_reward, reward_dict
+def quat_mul(q1: Tensor, q2: Tensor) -> Tensor:
+    # Multiply two quaternions
+    w1, x1, y1, z1 = q1.unbind(dim=-1)
+    w2, x2, y2, z2 = q2.unbind(dim=-1)
+    return torch.stack((w1 * w2 - x1 * x2 - y1 * y2 - z1 * z2,
+                        w1 * x2 + x1 * w2 + y1 * z2 - z1 * y2,
+                        w1 * y2 - x1 * z2 + y1 * w2 + z1 * x2,
+                        w1 * z2 + x1 * y2 - y1 * x2 + z1 * w2), dim=-1)

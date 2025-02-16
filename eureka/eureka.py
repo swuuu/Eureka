@@ -44,6 +44,11 @@ def main(cfg):
     task_obs_code_string  = file_to_string(task_obs_file)
     output_file = f"{ISAAC_ROOT_DIR}/tasks/{env_name}{suffix.lower()}.py"
 
+    if cfg.run_on_multiple_GPUs:
+        num_GPUS = 2 # on a cluster, we use 2 GPUs for now
+        gpu0 = "cuda:0"
+        gpu1 = "cuda:1"
+
     # Loading all text prompts
     prompt_dir = f'{EUREKA_ROOT_DIR}/utils/prompts'
     initial_system = file_to_string(f'{prompt_dir}/initial_system.txt')
@@ -119,7 +124,7 @@ def main(cfg):
         
         code_runs = [] 
         rl_runs = []
-        for response_id in range(cfg.sample):
+        for i, response_id in enumerate(range(cfg.sample)):
             response_cur = responses[response_id]["message"]["content"]
             logging.info(f"Iteration {iter}: Processing Code Run {response_id}")
 
@@ -184,7 +189,7 @@ def main(cfg):
             shutil.copy(output_file, f"env_iter{iter}_response{response_id}.py")
 
             # Find the freest GPU to run GPU-accelerated RL
-            set_freest_gpu()
+            if not cfg.run_on_multiple_GPUs: set_freest_gpu()
             
             # Execute the python file with flags
             rl_filepath = f"env_iter{iter}_response{response_id}.txt"
@@ -194,7 +199,9 @@ def main(cfg):
                                             f'task={task}{suffix}', f'wandb_activate={cfg.use_wandb}',
                                             f'wandb_entity={cfg.wandb_username}', f'wandb_project={cfg.wandb_project}',
                                             f'headless={not cfg.capture_video}', f'capture_video={cfg.capture_video}', 'force_render=False',
-                                            f'max_iterations={cfg.max_iterations}'],
+                                            f'max_iterations={cfg.max_iterations}',
+                                            f'sim_device={gpu0 if (i%num_GPUS) == 0 else gpu1}' if cfg.run_on_multiple_GPUs else "",
+                                            f'rl_device={gpu0 if (i%num_GPUS) == 0 else gpu1}' if cfg.run_on_multiple_GPUs else ""],
                                             stdout=f, stderr=f)
             block_until_training(rl_filepath, log_status=True, iter_num=iter, response_id=response_id)
             rl_runs.append(process)
@@ -350,7 +357,7 @@ def main(cfg):
     
     eval_runs = []
     for i in range(cfg.num_eval):
-        set_freest_gpu()
+        if not cfg.run_on_multiple_GPUs: set_freest_gpu()
         
         # Execute the python file with flags
         rl_filepath = f"reward_code_eval{i}.txt"

@@ -17,10 +17,13 @@ suffix: GPT  # suffix for generated files (indicates LLM model)
 iteration: 1 # how many iterations of Eureka to run
 sample: 3 # number of Eureka samples to generate per iteration
 max_iterations: 1500 # 3000 # RL Policy training iterations (decrease this to make the feedback loop faster)
-num_eval: 3 # number of evaluation episodes to run for the final reward
+num_eval: 2 # number of evaluation episodes to run for the final reward
 capture_video: False # whether to capture policy rollout videos
 
 # Weights and Biases
 use_wandb: False # whether to use wandb for logging
 wandb_username: "" # wandb username if logging with wandb
 wandb_project: "" # wandb project if logging with wandb
+
+# Custom
+run_on_multiple_GPUs: False

@@ -1,0 +1,4 @@
+task: AnymalTerrain
+env_name: anymal_terrain
+description: to make the quadruped follow randomly chosen x,y, and yaw target velocities
+max_iterations: 1500

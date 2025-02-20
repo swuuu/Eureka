@@ -19,6 +19,7 @@ INSTALL_REQUIRES = [
     "termcolor",
     "hydra-core>=1.1",
     "pyvirtualdisplay",
+    "onnx"
 ]
 
 # Installation operation

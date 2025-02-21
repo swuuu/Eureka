@@ -200,7 +200,7 @@ class AnymalGPT(VecTask):
         self.compute_reward(self.actions)
 
     def compute_reward(self, actions):
-        self.rew_buf[:], self.rew_dict = compute_reward(self.root_states, self.commands, self.dof_pos, self.default_dof_pos, self.dof_vel)
+        self.rew_buf[:], self.rew_dict = compute_reward(self.root_states, self.commands, self.dof_pos, self.default_dof_pos, self.dof_vel, self.gravity_vec, self.actions, self.lin_vel_scale, self.ang_vel_scale, self.dof_pos_scale, self.dof_vel_scale)
         self.extras['gpt_reward'] = self.rew_buf.mean()
         for rew_state in self.rew_dict: self.extras[rew_state] = self.rew_dict[rew_state].mean()
         self.gt_rew_buf, self.reset_buf[:], self.consecutive_successes[:] = compute_success(
@@ -346,54 +346,44 @@ def compute_reward(root_states: torch.Tensor,
                    commands: torch.Tensor, 
                    dof_pos: torch.Tensor, 
                    default_dof_pos: torch.Tensor, 
-                   dof_vel: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-    """
-    Compute reward for following randomly chosen x, y, and yaw target velocities.
+                   dof_vel: torch.Tensor, 
+                   gravity_vec: torch.Tensor, 
+                   actions: torch.Tensor,
+                   lin_vel_scale: float,
+                   ang_vel_scale: float,
+                   dof_pos_scale: float,
+                   dof_vel_scale: float) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
     
-    Args:
-        root_states (torch.Tensor): Tensor of shape (..., 13) containing the state of the root actor.
-        commands (torch.Tensor): Tensor of shape (..., 3) containing the target velocities [x, y, yaw].
-        dof_pos (torch.Tensor): Current positions of the degrees of freedom.
-        default_dof_pos (torch.Tensor): Default positions of the degrees of freedom.
-        dof_vel (torch.Tensor): Current velocities of the degrees of freedom.
-
-    Returns:
-        Tuple containing:
-            - Total reward (torch.Tensor) 
-            - Dictionary with individual reward components.
-    """
-
-    # Normalize velocity rewards
-    lin_vel_scale: float = 1.0  # Assuming a scale factor for linear velocity
-    ang_vel_scale: float = 1.0  # Assuming a scale factor for angular velocity
-    
-    # Extract current velocities
+    # Calculate base velocities from root states
     base_quat = root_states[:, 3:7]
     base_lin_vel = quat_rotate_inverse(base_quat, root_states[:, 7:10]) * lin_vel_scale
     base_ang_vel = quat_rotate_inverse(base_quat, root_states[:, 10:13]) * ang_vel_scale
 
-    # Rewards based on velocity alignment with commands
-    lin_vel_rew = torch.sum((base_lin_vel[:, :2] - commands[:, :2]) ** 2, dim=-1)
-    ang_vel_rew = (base_ang_vel[:, 2] - commands[:, 2]) ** 2
+    # Calculate the error between desired and actual velocities
+    vel_error = commands - torch.cat((base_lin_vel[:, :2], base_ang_vel[:, 2:3]), dim=-1)
+    vel_error_norm = torch.norm(vel_error, dim=-1)
 
-    # Penalty for deviation from default configurations
-    dof_pos_pen = torch.sum((dof_pos - default_dof_pos) ** 2, dim=-1)
+    # Reward for following target velocities
+    vel_reward_temp = 0.1
+    vel_reward = torch.exp(-vel_reward_temp * vel_error_norm)
 
-    # Total reward calculations
-    lin_vel_temperature: float = 0.1
-    ang_vel_temperature: float = 0.1
-    pos_penalty_temperature: float = 0.1
+    # Regularization: penalize large actions (to encourage energy efficiency)
+    action_penalty_temp = 0.05
+    action_penalty = torch.exp(-action_penalty_temp * torch.norm(actions, dim=-1))
 
-    lin_vel_reward_transformed = torch.exp(-lin_vel_temperature * lin_vel_rew)
-    ang_vel_reward_transformed = torch.exp(-ang_vel_temperature * ang_vel_rew)
-    pos_penalty_transformed = torch.exp(-pos_penalty_temperature * dof_pos_pen)
+    # Regularization: penalize deviation from default joint positions
+    dof_pos_error = dof_pos - default_dof_pos
+    dof_pos_penalty_temp = 0.1
+    dof_pos_penalty = torch.exp(-dof_pos_penalty_temp * torch.norm(dof_pos_error, dim=-1))
 
-    total_reward = lin_vel_reward_transformed + ang_vel_reward_transformed + pos_penalty_transformed
+    # Sum all components
+    total_reward = vel_reward + action_penalty + dof_pos_penalty
 
-    reward_dict = {
-        'linear_velocity_reward': lin_vel_reward_transformed,
-        'angular_velocity_reward': ang_vel_reward_transformed,
-        'pose_penalty': pos_penalty_transformed
+    # Construct reward component dictionary
+    reward_components = {
+        "vel_reward": vel_reward,
+        "action_penalty": action_penalty,
+        "dof_pos_penalty": dof_pos_penalty
     }
 
-    return total_reward, reward_dict
+    return total_reward, reward_components

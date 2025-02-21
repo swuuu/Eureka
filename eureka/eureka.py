@@ -194,15 +194,21 @@ def main(cfg):
             # Execute the python file with flags
             rl_filepath = f"env_iter{iter}_response{response_id}.txt"
             with open(rl_filepath, 'w') as f:
-                process = subprocess.Popen(['python', '-u', f'{ISAAC_ROOT_DIR}/train.py',  
-                                            'hydra/output=subprocess',
-                                            f'task={task}{suffix}', f'wandb_activate={cfg.use_wandb}',
-                                            f'wandb_entity={cfg.wandb_username}', f'wandb_project={cfg.wandb_project}',
-                                            f'headless={not cfg.capture_video}', f'capture_video={cfg.capture_video}', 'force_render=False',
-                                            f'max_iterations={cfg.max_iterations}',
-                                            f'sim_device={gpu0 if (i%num_GPUS) == 0 else gpu1}' if cfg.run_on_multiple_GPUs else "",
-                                            f'rl_device={gpu0 if (i%num_GPUS) == 0 else gpu1}' if cfg.run_on_multiple_GPUs else ""],
-                                            stdout=f, stderr=f)
+                args = ['python', '-u', f'{ISAAC_ROOT_DIR}/train.py',  
+                        'hydra/output=subprocess',
+                        f'task={task}{suffix}', 
+                        f'wandb_activate={cfg.use_wandb}',
+                        f'wandb_entity={cfg.wandb_username}', 
+                        f'wandb_project={cfg.wandb_project}',
+                        f'headless={not cfg.capture_video}', 
+                        f'capture_video={cfg.capture_video}', 
+                        'force_render=False',
+                        f'max_iterations={cfg.max_iterations}']
+                if cfg.run_on_multiple_GPUs:
+                    gpu = gpu0 if (i % num_GPUS) == 0 else gpu1
+                    args.append(f'sim_device={gpu}')
+                    args.append(f'rl_device={gpu}')
+                process = subprocess.Popen(args, stdout=f, stderr=f)
             block_until_training(rl_filepath, log_status=True, iter_num=iter, response_id=response_id)
             rl_runs.append(process)
         

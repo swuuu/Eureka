@@ -1,4 +1,4 @@
-description: Goal of the policy: to make the quadruped follow randomly chosen x,y, and yaw target velocities.
+description: Main goal of the policy is to make the quadruped follow randomly chosen x,y, and yaw target velocities.
   This class corresponds to the Staircase Ascent Locomotion task. The environment consists of a quadruped robot navigating up a 
   staircase with consistent step heights and moderate inclines. The goal is to learn a stable and natural climbing gait that 
   allows the robot to ascend efficiently without excessive energy expenditure. The robot should exhibit a slight forward lean to

@@ -1,4 +1,4 @@
-description: Goal of the policy: to make the quadruped follow randomly chosen x,y, and yaw target velocities.
+description: Main goal of the policy is to make the quadruped follow randomly chosen x,y, and yaw target velocities.
   This class corresponds to the Flat Terrain Locomotion task. 
   The environment consists of a quadruped robot navigating across a flat and sometimes 
   slightly uneven surface, aiming to achieve a natural and stable walking gait. 

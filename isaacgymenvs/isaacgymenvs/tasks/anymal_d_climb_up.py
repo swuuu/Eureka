@@ -40,7 +40,7 @@ from typing import Tuple, Dict
 from isaacgymenvs.tasks.base.vec_task import VecTask
 from .utils.terrains_for_policy_per_gait import TerrainsForPolicyPerGait as Terrain
 
-class AnymalDWalk(VecTask):
+class AnymalDClimbUp(VecTask):
 
     def __init__(self, cfg, rl_device, sim_device, graphics_device_id, headless, virtual_screen_capture, force_render):
 
@@ -296,7 +296,8 @@ class AnymalDWalk(VecTask):
         if not self.allow_knee_contacts:
             knee_contact = torch.norm(self.contact_forces[:, self.knee_indices, :], dim=2) > 1.
             self.reset_buf |= torch.any(knee_contact, dim=1)
-
+        
+        self.reset_buf |= self._is_robot_out_of_terrain_env()
         self.reset_buf = torch.where(self.progress_buf >= self.max_episode_length - 1, torch.ones_like(self.reset_buf), self.reset_buf)
 
     def compute_observations(self):
@@ -394,7 +395,7 @@ class AnymalDWalk(VecTask):
             self.update_terrain_level(env_ids)
             self.root_states[env_ids] = self.base_init_state
             self.root_states[env_ids, :3] += self.env_origins[env_ids]
-            self.root_states[env_ids, :2] += torch_rand_float(-0.5, 0.5, (len(env_ids), 2), device=self.device)
+            # self.root_states[env_ids, :2] += torch_rand_float(-0.5, 0.5, (len(env_ids), 2), device=self.device)
         else:
             self.root_states[env_ids] = self.base_init_state
 
@@ -536,6 +537,25 @@ class AnymalDWalk(VecTask):
         heights = torch.min(heights1, heights2)
 
         return heights.view(self.num_envs, -1) * self.terrain.vertical_scale
+    
+    def _is_robot_out_of_terrain_env(self):
+        """
+        get dimensions of the local env
+        figure out if the origin is at a corner of the env or at the center of the env
+        """
+        # curr_robot_x_local = self.root_states[:, 0] - self.env_origins[:, 0]
+        env_bound_upper_x = self.env_origins[:, 0] + self.terrain.env_length * 0.5
+        env_bound_lower_x = self.env_origins[:, 0] - self.terrain.env_length * 0.5
+        env_bound_upper_y = self.env_origins[:, 1] + self.terrain.env_width * 0.5
+        env_bound_lower_y = self.env_origins[:, 1] - self.terrain.env_width * 0.5
+
+        env_ids_passed_upper_x = self.root_states[:, 0] > env_bound_upper_x
+        env_ids_passed_lower_x = self.root_states[:, 0] < env_bound_lower_x
+        env_ids_passed_upper_y = self.root_states[:, 1] > env_bound_upper_y
+        env_ids_passed_lower_y = self.root_states[:, 1] < env_bound_lower_y
+
+        env_ids_to_reset = env_ids_passed_upper_x | env_ids_passed_lower_x | env_ids_passed_upper_y | env_ids_passed_lower_y
+        return env_ids_to_reset
 
 @torch.jit.script
 def quat_apply_yaw(quat, vec):

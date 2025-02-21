@@ -40,6 +40,9 @@ from typing import Tuple, Dict
 from isaacgymenvs.tasks.base.vec_task import VecTask
 
 class AnymalDTerrain(VecTask):
+    """
+    Equivalent to the task anymal_d_rough from legged_gym 
+    """
 
     def __init__(self, cfg, rl_device, sim_device, graphics_device_id, headless, virtual_screen_capture, force_render):
 
@@ -302,6 +305,9 @@ class AnymalDTerrain(VecTask):
         self.base_index = self.gym.find_actor_rigid_body_handle(self.envs[0], self.anymal_handles[0], "base")
 
     def check_termination(self):
+        """
+        self.reset_buf = torch.any(torch.norm(self.contact_forces[:, self.termination_contact_indices, :], dim=-1) > 1., dim=1)
+        """
         self.reset_buf = torch.norm(self.contact_forces[:, self.base_index, :], dim=1) > 1.
         if not self.allow_knee_contacts:
             knee_contact = torch.norm(self.contact_forces[:, self.knee_indices, :], dim=2) > 1.
@@ -337,7 +343,7 @@ class AnymalDTerrain(VecTask):
         rew_orient = torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1) * self.rew_scales["orient"]
 
         # base height penalty
-        rew_base_height = torch.square(self.root_states[:, 2] - 0.52) * self.rew_scales["base_height"] # TODO add target base height to cfg
+        rew_base_height = torch.square(self.root_states[:, 2] - 0.5) * self.rew_scales["base_height"] # TODO add target base height to cfg
 
         # torque penalty
         rew_torque = torch.sum(torch.square(self.torques), dim=1) * self.rew_scales["torque"]

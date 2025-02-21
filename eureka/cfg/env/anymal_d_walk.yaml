@@ -1,0 +1,15 @@
+description: Goal of the policy: to make the quadruped follow randomly chosen x,y, and yaw target velocities.
+  This class corresponds to the Flat Terrain Locomotion task. 
+  The environment consists of a quadruped robot navigating across a flat and sometimes 
+  slightly uneven surface, aiming to achieve a natural and stable walking gait. 
+  The policy should generate graceful and energy-efficient movements, ensuring that foot swings 
+  are not too rapid and impact forces remain low to facilitate real-world deployment. 
+  Stability is prioritized, with minimal oscillations or erratic body motions. 
+  The learned gait should be robust to small disturbances, allowing smooth recovery from minor 
+  external forces or surface variations. The final motion should be safe for deployment, 
+  avoiding excessive torque spikes or unnatural joint configurations. 
+  The policy should optimize for a smooth, flowing gait with a balance between efficiency and adaptability, 
+  ensuring the robot moves confidently and predictably across its environment.
+task: AnymalDWalk
+env_name: anymal_d_terrain
+max_iterations: 1500

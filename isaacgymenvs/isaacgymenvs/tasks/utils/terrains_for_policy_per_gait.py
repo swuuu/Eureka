@@ -11,7 +11,6 @@ class TerrainsForPolicyPerGait():
         self.border_size = 20
         self.env_length = cfg["mapLength"]
         self.env_width = cfg["mapWidth"]
-        self.proportions = [np.sum(cfg["terrainProportions"][:i+1]) for i in range(len(cfg["terrainProportions"]))]
 
         self.env_rows = cfg["numLevels"]
         self.env_cols = cfg["numTerrains"]
@@ -25,7 +24,6 @@ class TerrainsForPolicyPerGait():
         self.tot_cols = int(self.env_cols * self.width_per_env_pixels) + 2 * self.border
         self.tot_rows = int(self.env_rows * self.length_per_env_pixels) + 2 * self.border
 
-        print(f'{cfg["terrainProportions"]}')
         self.terrain_types = cfg["terrainColTypes"]
 
         self.height_field_raw = np.zeros((self.tot_rows , self.tot_cols), dtype=np.int16)
@@ -58,11 +56,11 @@ class TerrainsForPolicyPerGait():
         amplitude = [0.05, 0.1]
 
         # make the terrain
-        terrain = terrain_utils.SubTerrain(   "terrain",
+        terrain = terrain_utils.SubTerrain("terrain",
                                 width=self.width_per_env_pixels,
                                 length=self.width_per_env_pixels,
-                                vertical_scale=self.cfg.vertical_scale,
-                                horizontal_scale=self.cfg.horizontal_scale)
+                                vertical_scale=self.vertical_scale,
+                                horizontal_scale=self.horizontal_scale)
         if choice == "smooth_pyramid_slope":
             slope = slope_rng[0] + (slope_rng[1] - slope_rng[0]) * difficulty
             slope = -slope if np.random.rand() < 0.5 else slope 
@@ -79,7 +77,7 @@ class TerrainsForPolicyPerGait():
             terrain_utils.pyramid_stairs_terrain(terrain, step_width=step_width, step_height=step_height, platform_size=platform_size)
         elif choice == "pyramid_stairs_up":
             step_width = stair_width[0] + (stair_width[1] - stair_width[0]) * difficulty
-            step_height = stair_height[2] + (self.cfg.stair_height[3] - self.cfg.stair_height[2]) * difficulty
+            step_height = stair_height[2] + (stair_height[3] - stair_height[2]) * difficulty
             step_height *= -1
             terrain_utils.pyramid_stairs_terrain(terrain, step_width=step_width, step_height=step_height, platform_size=platform_size)
         elif choice == "discrete":
@@ -92,6 +90,8 @@ class TerrainsForPolicyPerGait():
             num_waves = 5
             amplitude = amplitude[0] + (amplitude[1] - amplitude[0]) * difficulty
             terrain_utils.wave_terrain(terrain, num_waves=num_waves, amplitude=amplitude)
+        elif choice =="flat":
+            pass
         else:
             raise ValueError("Unknown terrain type: {}".format(choice))
         return terrain
@@ -105,9 +105,6 @@ class TerrainsForPolicyPerGait():
         start_y = self.border + j * self.width_per_env_pixels
         end_y = self.border + (j + 1) * self.width_per_env_pixels
         self.height_field_raw[start_x: end_x, start_y:end_y] = terrain.height_field_raw
-
-        # save the env bounds (used for modifying the env terrain)
-        self.terrain_bounds[i, j] = np.array([start_x, end_x, start_y, end_y])
 
         env_origin_x = (i + 0.5) * self.env_length
         env_origin_y = (j + 0.5) * self.env_width

@@ -20,8 +20,8 @@ env:
     maxInitMapLevel: 0
     mapLength: 8.
     mapWidth: 8.
-    numLevels: 2 # 10
-    numTerrains: 2 # 20
+    numLevels: 10
+    numTerrains: 20
     # terrain types: [smooth slope, rough slope, stairs up, stairs down, discrete]
     terrainProportions: [0.1, 0.1, 0.35, 0.25, 0.2]
     # tri mesh only:
@@ -139,11 +139,11 @@ sim:
     solver_type: ${....solver_type}
     use_gpu: ${contains:"cuda",${....sim_device}} # set to False to run on CPU
     num_position_iterations: 4
-    num_velocity_iterations: 1
-    contact_offset: 0.02
+    num_velocity_iterations: 0 #1
+    contact_offset: 0.01 # 0.02
     rest_offset: 0.0
-    bounce_threshold_velocity: 0.2
-    max_depenetration_velocity: 100.0
+    bounce_threshold_velocity: 0.5 # 0.2
+    max_depenetration_velocity: 100.0 # 1.0 # 100.0
     default_buffer_size_multiplier: 5.0
     max_gpu_contact_pairs: 8388608 # 8*1024*1024
     num_subscenes: ${....num_subscenes}

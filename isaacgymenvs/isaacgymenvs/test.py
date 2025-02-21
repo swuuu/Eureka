@@ -204,8 +204,8 @@ def launch_rlg_hydra(cfg: DictConfig):
     runner.reset()
 
     statistics = runner.run({
-        'train': not cfg.test,
-        'play': cfg.test,
+        'train': False,
+        'play': True,
         'checkpoint' : cfg.checkpoint,
         'sigma': cfg.sigma if cfg.sigma != '' else None
     })

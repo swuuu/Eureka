@@ -1,0 +1,15 @@
+description: Goal of the policy: to make the quadruped follow randomly chosen x,y, and yaw target velocities.
+  This class corresponds to the Staircase Ascent Locomotion task. The environment consists of a quadruped robot navigating up a 
+  staircase with consistent step heights and moderate inclines. The goal is to learn a stable and natural climbing gait that 
+  allows the robot to ascend efficiently without excessive energy expenditure. The robot should exhibit a slight forward lean to
+  maintain balance and prevent backward tipping. 
+  Foot placements should be precise and well-timed to ensure consistent contact with each stair, avoiding missteps or slipping.
+  The gait should be controlled and deliberate, with smooth, coordinated leg movements to prevent excessive joint strain and maintain 
+  continuous forward momentum. Foot swings should be just high enough to clear each step while minimizing unnecessary motion. 
+  The robot should use its body posture and momentum effectively, distributing weight appropriately between the front and rear legs to ensure stability on inclined surfaces.
+  Robustness to minor perturbations is essential—if the robot encounters slight variations in stair height or surface texture, 
+  it should be able to adapt and recover rather than stumbling. The final policy should prioritize safety, efficiency, and real-world deployability, 
+  minimizing high-impact forces and excessive torque spikes while maintaining a confident and fluid climbing motion.
+task: AnymalDClimbUp
+env_name: anymal_d_climb_up
+max_iterations: 1500

@@ -1,30 +1,3 @@
-# Copyright (c) 2018-2023, NVIDIA Corporation
-# All rights reserved.
-#
-# Redistribution and use in source and binary forms, with or without
-# modification, are permitted provided that the following conditions are met:
-#
-# 1. Redistributions of source code must retain the above copyright notice, this
-#    list of conditions and the following disclaimer.
-#
-# 2. Redistributions in binary form must reproduce the above copyright notice,
-#    this list of conditions and the following disclaimer in the documentation
-#    and/or other materials provided with the distribution.
-#
-# 3. Neither the name of the copyright holder nor the names of its
-#    contributors may be used to endorse or promote products derived from
-#    this software without specific prior written permission.
-#
-# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
-# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
-# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
-# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
-# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
-# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
-# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
-# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import numpy as np
 import os, time
@@ -50,7 +23,6 @@ class AnymalDWalk(VecTask):
         self.debug_viz = self.cfg["env"]["enableDebugVis"]
         self.init_done = False
 
-        # normalization
         self.lin_vel_scale = self.cfg["env"]["learn"]["linearVelocityScale"]
         self.ang_vel_scale = self.cfg["env"]["learn"]["angularVelocityScale"]
         self.dof_pos_scale = self.cfg["env"]["learn"]["dofPositionScale"]
@@ -58,7 +30,6 @@ class AnymalDWalk(VecTask):
         self.height_meas_scale = self.cfg["env"]["learn"]["heightMeasurementScale"]
         self.action_scale = self.cfg["env"]["control"]["actionScale"]
 
-        # reward scales
         self.rew_scales = {}
         self.rew_scales["termination"] = self.cfg["env"]["learn"]["terminalReward"] 
         self.rew_scales["lin_vel_xy"] = self.cfg["env"]["learn"]["linearVelocityXYRewardScale"] 
@@ -75,22 +46,18 @@ class AnymalDWalk(VecTask):
         self.rew_scales["action_rate"] = self.cfg["env"]["learn"]["actionRateRewardScale"]
         self.rew_scales["hip"] = self.cfg["env"]["learn"]["hipRewardScale"]
 
-        #command ranges
         self.command_x_range = self.cfg["env"]["randomCommandVelocityRanges"]["linear_x"]
         self.command_y_range = self.cfg["env"]["randomCommandVelocityRanges"]["linear_y"]
         self.command_yaw_range = self.cfg["env"]["randomCommandVelocityRanges"]["yaw"]
 
-        # base init state
         pos = self.cfg["env"]["baseInitState"]["pos"]
         rot = self.cfg["env"]["baseInitState"]["rot"]
         v_lin = self.cfg["env"]["baseInitState"]["vLinear"]
         v_ang = self.cfg["env"]["baseInitState"]["vAngular"]
         self.base_init_state = pos + rot + v_lin + v_ang
 
-        # default joint positions
         self.named_default_joint_angles = self.cfg["env"]["defaultJointAngles"]
 
-        # other
         self.decimation = self.cfg["env"]["control"]["decimation"]
         self.dt = self.decimation * self.cfg["sim"]["dt"]
         self.max_episode_length_s = self.cfg["env"]["learn"]["episodeLength_s"] 
@@ -113,7 +80,6 @@ class AnymalDWalk(VecTask):
             cam_target = gymapi.Vec3(lookat[0], lookat[1], lookat[2])
             self.gym.viewer_camera_look_at(self.viewer, None, cam_pos, cam_target)
 
-        # get gym GPU state tensors
         actor_root_state = self.gym.acquire_actor_root_state_tensor(self.sim)
         dof_state_tensor = self.gym.acquire_dof_state_tensor(self.sim)
         net_contact_forces = self.gym.acquire_net_contact_force_tensor(self.sim)
@@ -122,14 +88,12 @@ class AnymalDWalk(VecTask):
         self.gym.refresh_actor_root_state_tensor(self.sim)
         self.gym.refresh_net_contact_force_tensor(self.sim)
 
-        # create some wrapper tensors for different slices
         self.root_states = gymtorch.wrap_tensor(actor_root_state)
         self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)
         self.dof_pos = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 0]
         self.dof_vel = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 1]
         self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1, 3) # shape: num_envs, num_bodies, xyz axis
 
-        # initialize some data used later on
         self.common_step_counter = 0
         self.extras = {}
         self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
@@ -145,13 +109,11 @@ class AnymalDWalk(VecTask):
 
         self.height_points = self.init_height_points()
         self.measured_heights = None
-        # joint positions offsets
         self.default_dof_pos = torch.zeros_like(self.dof_pos, dtype=torch.float, device=self.device, requires_grad=False)
         for i in range(self.num_actions):
             name = self.dof_names[i]
             angle = self.named_default_joint_angles[name]
             self.default_dof_pos[:, i] = angle
-        # reward episode sums
         torch_zeros = lambda : torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
         self.episode_sums = {"lin_vel_xy": torch_zeros(), "lin_vel_z": torch_zeros(), "ang_vel_z": torch_zeros(), "ang_vel_xy": torch_zeros(),
                              "orient": torch_zeros(), "torques": torch_zeros(), "joint_acc": torch_zeros(), "base_height": torch_zeros(),
@@ -232,7 +194,6 @@ class AnymalDWalk(VecTask):
         self.num_dof = self.gym.get_asset_dof_count(anymal_asset)
         self.num_bodies = self.gym.get_asset_rigid_body_count(anymal_asset)
 
-        # prepare friction randomization
         rigid_shape_prop = self.gym.get_asset_rigid_shape_properties(anymal_asset)
         friction_range = self.cfg["env"]["learn"]["frictionRange"]
         num_buckets = 100
@@ -254,7 +215,6 @@ class AnymalDWalk(VecTask):
 
         dof_props = self.gym.get_asset_dof_properties(anymal_asset)
 
-        # env origins
         self.env_origins = torch.zeros(self.num_envs, 3, device=self.device, requires_grad=False)
         if not self.curriculum: self.cfg["env"]["terrain"]["maxInitMapLevel"] = self.cfg["env"]["terrain"]["numLevels"] - 1
         self.terrain_levels = torch.randint(0, self.cfg["env"]["terrain"]["maxInitMapLevel"]+1, (self.num_envs,), device=self.device)
@@ -268,7 +228,6 @@ class AnymalDWalk(VecTask):
         self.anymal_handles = []
         self.envs = []
         for i in range(self.num_envs):
-            # create env instance
             env_handle = self.gym.create_env(self.sim, env_lower, env_upper, num_per_row)
             if self.custom_origins:
                 self.env_origins[i] = self.terrain_origins[self.terrain_levels[i], self.terrain_types[i]]
@@ -313,41 +272,30 @@ class AnymalDWalk(VecTask):
                                     ), dim=-1)
 
     def compute_reward(self):
-        # velocity tracking reward
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
         ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
         rew_lin_vel_xy = torch.exp(-lin_vel_error/0.25) * self.rew_scales["lin_vel_xy"]
         rew_ang_vel_z = torch.exp(-ang_vel_error/0.25) * self.rew_scales["ang_vel_z"]
 
-        # other base velocity penalties
         rew_lin_vel_z = torch.square(self.base_lin_vel[:, 2]) * self.rew_scales["lin_vel_z"]
         rew_ang_vel_xy = torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1) * self.rew_scales["ang_vel_xy"]
 
-        # orientation penalty
         rew_orient = torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1) * self.rew_scales["orient"]
 
-        # base height penalty
         rew_base_height = torch.square(self.root_states[:, 2] - 0.5) * self.rew_scales["base_height"] # TODO add target base height to cfg
 
-        # torque penalty
         rew_torque = torch.sum(torch.square(self.torques), dim=1) * self.rew_scales["torque"]
 
-        # joint acc penalty
         rew_joint_acc = torch.sum(torch.square(self.last_dof_vel - self.dof_vel), dim=1) * self.rew_scales["joint_acc"]
 
-        # collision penalty
         knee_contact = torch.norm(self.contact_forces[:, self.knee_indices, :], dim=2) > 1.
         rew_collision = torch.sum(knee_contact, dim=1) * self.rew_scales["collision"] # sum vs any ?
 
-        # stumbling penalty
         stumble = (torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) > 5.) * (torch.abs(self.contact_forces[:, self.feet_indices, 2]) < 1.)
         rew_stumble = torch.sum(stumble, dim=1) * self.rew_scales["stumble"]
 
-        # action rate penalty
         rew_action_rate = torch.sum(torch.square(self.last_actions - self.actions), dim=1) * self.rew_scales["action_rate"]
 
-        # air time reward
-        # contact = torch.norm(contact_forces[:, feet_indices, :], dim=2) > 1.
         contact = self.contact_forces[:, self.feet_indices, 2] > 1.
         first_contact = (self.feet_air_time > 0.) * contact
         self.feet_air_time += self.dt
@@ -355,18 +303,14 @@ class AnymalDWalk(VecTask):
         rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
         self.feet_air_time *= ~contact
 
-        # cosmetic penalty for hip motion
         rew_hip = torch.sum(torch.abs(self.dof_pos[:, [0, 3, 6, 9]] - self.default_dof_pos[:, [0, 3, 6, 9]]), dim=1)* self.rew_scales["hip"]
 
-        # total reward
         self.rew_buf = rew_lin_vel_xy + rew_ang_vel_z + rew_lin_vel_z + rew_ang_vel_xy + rew_orient + rew_base_height +\
                     rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_airTime + rew_hip + rew_stumble
         self.rew_buf = torch.clip(self.rew_buf, min=0., max=None)
 
-        # add termination reward
         self.rew_buf += self.rew_scales["termination"] * self.reset_buf * ~self.timeout_buf
 
-        # log episode reward sums
         self.episode_sums["lin_vel_xy"] += rew_lin_vel_xy
         self.episode_sums["ang_vel_z"] += rew_ang_vel_z
         self.episode_sums["lin_vel_z"] += rew_lin_vel_z
@@ -417,7 +361,6 @@ class AnymalDWalk(VecTask):
         self.progress_buf[env_ids] = 0
         self.reset_buf[env_ids] = 1
 
-        # fill extras
         self.extras["episode"] = {}
         for key in self.episode_sums.keys():
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
@@ -426,7 +369,6 @@ class AnymalDWalk(VecTask):
 
     def update_terrain_level(self, env_ids):
         if not self.init_done or not self.curriculum:
-            # don't change on initial reset
             return
         distance = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
         self.terrain_levels[env_ids] -= 1 * (distance < torch.norm(self.commands[env_ids, :2])*self.max_episode_length_s*0.25)
@@ -451,7 +393,6 @@ class AnymalDWalk(VecTask):
             self.gym.refresh_dof_state_tensor(self.sim)
 
     def post_physics_step(self):
-        # self.gym.refresh_dof_state_tensor(self.sim) # done in step
         self.gym.refresh_actor_root_state_tensor(self.sim)
         self.gym.refresh_net_contact_force_tensor(self.sim)
 
@@ -461,7 +402,6 @@ class AnymalDWalk(VecTask):
         if self.common_step_counter % self.push_interval == 0:
             self.push_robots()
 
-        # prepare quantities
         self.base_quat = self.root_states[:, 3:7]
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
@@ -470,7 +410,6 @@ class AnymalDWalk(VecTask):
         heading = torch.atan2(forward[:, 1], forward[:, 0])
         self.commands[:, 2] = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
 
-        # compute observations, rewards, resets, ...
         self.check_termination()
         self.compute_reward()
         env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
@@ -485,7 +424,6 @@ class AnymalDWalk(VecTask):
         self.last_dof_vel[:] = self.dof_vel[:]
 
         if self.viewer and self.enable_viewer_sync and self.debug_viz:
-            # draw height lines
             self.gym.clear_lines(self.viewer)
             self.gym.refresh_rigid_body_state_tensor(self.sim)
             sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(1, 1, 0))
@@ -501,7 +439,6 @@ class AnymalDWalk(VecTask):
                     gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose) 
 
     def init_height_points(self):
-        # 1mx1.6m rectangle (without center line)
         y = 0.1 * torch.tensor([-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5], device=self.device, requires_grad=False) # 10-50cm on each side
         x = 0.1 * torch.tensor([-8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8], device=self.device, requires_grad=False) # 20-80cm on each side
         grid_x, grid_y = torch.meshgrid(x, y)

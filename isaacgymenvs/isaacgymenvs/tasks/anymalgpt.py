@@ -200,7 +200,7 @@ class AnymalGPT(VecTask):
         self.compute_reward(self.actions)
 
     def compute_reward(self, actions):
-        self.rew_buf[:], self.rew_dict = compute_reward(self.root_states, self.commands, self.dof_pos, self.default_dof_pos, self.dof_vel, self.actions)
+        self.rew_buf[:], self.rew_dict = compute_reward(self.root_states, self.commands, self.dof_pos, self.default_dof_pos, self.dof_vel, self.actions, self.lin_vel_scale, self.ang_vel_scale, self.dof_pos_scale, self.dof_vel_scale)
         self.extras['gpt_reward'] = self.rew_buf.mean()
         for rew_state in self.rew_dict: self.extras[rew_state] = self.rew_dict[rew_state].mean()
         self.gt_rew_buf, self.reset_buf[:], self.consecutive_successes[:] = compute_success(
@@ -347,45 +347,45 @@ def compute_reward(root_states: torch.Tensor,
                    dof_pos: torch.Tensor, 
                    default_dof_pos: torch.Tensor, 
                    dof_vel: torch.Tensor, 
-                   actions: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-    # Initialize temperature parameters for exponential transformations
-    velocity_alignment_temp = 1.0
-    joint_position_temp = 1.0
-    joint_velocity_temp = 1.0
-    stability_temp = 1.0
-
-    # Extract relevant data
+                   actions: torch.Tensor, 
+                   lin_vel_scale: float, 
+                   ang_vel_scale: float, 
+                   dof_pos_scale: float, 
+                   dof_vel_scale: float) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+    
+    # Extracting linear and angular velocity
     base_quat = root_states[:, 3:7]
-    base_lin_vel = quat_rotate_inverse(base_quat, root_states[:, 7:10])
-    base_ang_vel = quat_rotate_inverse(base_quat, root_states[:, 10:13])
+    base_lin_vel = quat_rotate_inverse(base_quat, root_states[:, 7:10]) * lin_vel_scale
+    base_ang_vel = quat_rotate_inverse(base_quat, root_states[:, 10:13]) * ang_vel_scale
+
+    # Computing velocity differences
+    vel_diff = base_lin_vel - commands[:, :2]
+    yaw_diff = base_ang_vel[:, 2] - commands[:, 2]
+
+    # Reward for tracking linear velocities in x and y directions
+    lin_vel_error = torch.norm(vel_diff, dim=-1)
+    lin_vel_reward = torch.exp(-lin_vel_error)
+    lin_vel_temperature = 1.0  # Variable to adjust the sensitivity of the exponential function
+
+    # Reward for tracking the yaw (angular velocity around z-axis)
+    ang_vel_error = torch.abs(yaw_diff)
+    ang_vel_reward = torch.exp(-ang_vel_error)
+    ang_vel_temperature = 1.0  # Similar temperature variable for angular velocity
+
+    # Penalizing actions (motor efforts) to encourage energy efficiency
+    action_penalty = torch.sum(torch.abs(actions), dim=-1)
+
+    # Total combined reward
+    total_reward = lin_vel_reward + ang_vel_reward - action_penalty
     
-    # Compute velocity alignment reward
-    lin_align_error = base_lin_vel[:, :2] - commands[:, :2]
-    yaw_align_error = base_ang_vel[:, 2] - commands[:, 2]
-    velocity_alignment_reward = -torch.norm(lin_align_error, dim=-1) - torch.abs(yaw_align_error)
-    velocity_alignment_reward = torch.exp(velocity_alignment_temp * velocity_alignment_reward)
+    # Scale rewards to manage variance
+    lin_vel_reward = torch.exp(-lin_vel_error / lin_vel_temperature)
+    ang_vel_reward = torch.exp(-ang_vel_error / ang_vel_temperature)
     
-    # Compute joint position deviation penalty
-    joint_position_error = torch.norm(dof_pos - default_dof_pos, dim=-1)
-    joint_position_penalty = torch.exp(-joint_position_temp * joint_position_error)
-    
-    # Compute joint velocity penalty
-    joint_velocity_penalty = torch.exp(-joint_velocity_temp * torch.norm(dof_vel, dim=-1))
-    
-    # Compute orientation stability penalty (fluctuations from upright posture)
-    upright_quat = torch.tensor([1., 0., 0., 0.], device=root_states.device, requires_grad=False).expand_as(base_quat)
-    orientation_error = torch.norm(base_quat - upright_quat, dim=-1)
-    stability_penalty = torch.exp(-stability_temp * orientation_error)
-    
-    # Total reward calculation
-    total_reward = velocity_alignment_reward + joint_position_penalty + joint_velocity_penalty + stability_penalty
-    
-    # Compile individual rewards into a dictionary
     reward_dict = {
-        "velocity_alignment_reward": velocity_alignment_reward,
-        "joint_position_penalty": joint_position_penalty,
-        "joint_velocity_penalty": joint_velocity_penalty,
-        "stability_penalty": stability_penalty,
+        'lin_vel_reward': lin_vel_reward,
+        'ang_vel_reward': ang_vel_reward,
+        'action_penalty': action_penalty
     }
     
     return total_reward, reward_dict

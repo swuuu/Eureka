@@ -31,6 +31,7 @@ from .anymal import Anymal
 from .anymal_terrain import AnymalTerrain
 from .anymal_d_terrain import AnymalDTerrain
 from .anymal_d_walk import AnymalDWalk
+from .anymal_d_climb_up import AnymalDClimbUp
 from .ball_balance import BallBalance
 from .cartpole import Cartpole 
 from .factory.factory_task_gears import FactoryTaskGears
@@ -82,6 +83,7 @@ isaacgym_task_map = {
     "AnymalTerrain": AnymalTerrain,
     "AnymalDTerrain": AnymalDTerrain,
     "AnymalDWalk": AnymalDWalk,
+    "AnymalDClimbUp": AnymalDClimbUp,
     "BallBalance": BallBalance,
     "Cartpole": Cartpole,
     "FactoryTaskGears": FactoryTaskGears,

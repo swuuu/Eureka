@@ -122,6 +122,15 @@ class AnymalDClimbUp(VecTask):
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
         self.init_done = True
 
+        if cfg["env"]["control"]["useActuactorNetwork"]:
+            asset_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../assets')
+            asset_file = self.cfg["env"]["control"]["actuatorNetFile"]
+            actuator_network_path = os.path.join(asset_root, asset_file)
+            self.actuator_network = torch.jit.load(actuator_network_path).to(self.device)
+            self.sea_input = torch.zeros(self.num_envs*self.num_actions, 1, 2, device=self.device, requires_grad=False)
+            self.sea_hidden_state = torch.zeros(2, self.num_envs*self.num_actions, 8, device=self.device, requires_grad=False)
+            self.sea_cell_state = torch.zeros(2, self.num_envs*self.num_actions, 8, device=self.device, requires_grad=False)
+
     def create_sim(self):
         self.up_axis_idx = 2 # index of up axis: Y=1, Z=2
         self.sim = super().create_sim(self.device_id, self.graphics_device_id, self.physics_engine, self.sim_params)
@@ -383,8 +392,14 @@ class AnymalDClimbUp(VecTask):
     def pre_physics_step(self, actions):
         self.actions = actions.clone().to(self.device)
         for i in range(self.decimation):
-            torques = torch.clip(self.Kp*(self.action_scale*self.actions + self.default_dof_pos - self.dof_pos) - self.Kd*self.dof_vel,
-                                 -80., 80.)
+            if self.cfg["env"]["control"]["useActuactorNetwork"]:
+                with torch.inference_mode():
+                    self.sea_input[:, 0, 0] = (actions * self.cfg["env"]["control"]["actionScale"] + self.default_dof_pos - self.dof_pos).flatten()
+                    self.sea_input[:, 0, 1] = self.dof_vel.flatten()
+                    torques, (self.sea_hidden_state[:], self.sea_cell_state[:]) = self.actuator_network(self.sea_input, (self.sea_hidden_state, self.sea_cell_state))
+            else:
+                torques = torch.clip(self.Kp*(self.action_scale*self.actions + self.default_dof_pos - self.dof_pos) - self.Kd*self.dof_vel,
+                                    -80., 80.)
             self.gym.set_dof_actuation_force_tensor(self.sim, gymtorch.unwrap_tensor(torques))
             self.torques = torques.view(self.torques.shape)
             self.gym.simulate(self.sim)

@@ -342,48 +342,46 @@ import math
 import torch
 from torch import Tensor
 @torch.jit.script
-def compute_reward(root_states: torch.Tensor, 
-                   commands: torch.Tensor, 
-                   dof_pos: torch.Tensor, 
-                   default_dof_pos: torch.Tensor, 
-                   dof_vel: torch.Tensor, 
-                   gravity_vec: torch.Tensor, 
+def compute_reward(root_states: torch.Tensor,
+                   commands: torch.Tensor,
+                   dof_pos: torch.Tensor,
+                   default_dof_pos: torch.Tensor,
+                   dof_vel: torch.Tensor,
+                   gravity_vec: torch.Tensor,
                    actions: torch.Tensor,
                    lin_vel_scale: float,
                    ang_vel_scale: float,
                    dof_pos_scale: float,
                    dof_vel_scale: float) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-    
-    # Calculate base velocities from root states
+
+    # Extract agent state variables
     base_quat = root_states[:, 3:7]
     base_lin_vel = quat_rotate_inverse(base_quat, root_states[:, 7:10]) * lin_vel_scale
     base_ang_vel = quat_rotate_inverse(base_quat, root_states[:, 10:13]) * ang_vel_scale
 
-    # Calculate the error between desired and actual velocities
-    vel_error = commands - torch.cat((base_lin_vel[:, :2], base_ang_vel[:, 2:3]), dim=-1)
-    vel_error_norm = torch.norm(vel_error, dim=-1)
+    # Adjust lin_vel_reward component
+    lin_vel_error = torch.norm(base_lin_vel[:, :2] - commands[:, :2], dim=-1)
+    lin_vel_temp = 0.5  # Adjusted temperature parameter for lin_vel
+    lin_vel_reward = torch.exp(-lin_vel_error / lin_vel_temp)
 
-    # Reward for following target velocities
-    vel_reward_temp = 0.1
-    vel_reward = torch.exp(-vel_reward_temp * vel_error_norm)
+    # Retain ang_vel_reward component with slight adjustment
+    ang_vel_error = torch.abs(base_ang_vel[:, 2] - commands[:, 2])
+    ang_vel_temp = 0.1  # Temperature parameter for ang_vel
+    ang_vel_reward = torch.exp(-ang_vel_error / ang_vel_temp)
 
-    # Regularization: penalize large actions (to encourage energy efficiency)
-    action_penalty_temp = 0.05
-    action_penalty = torch.exp(-action_penalty_temp * torch.norm(actions, dim=-1))
+    # Redefine action regularization reward to encourage stability
+    action_regularization = torch.sum(actions**2, dim=-1)
+    action_reg_temp = 0.5  # Adjusted temperature parameter for action_reg_reward
+    action_reg_reward = torch.exp(-action_regularization / action_reg_temp)
 
-    # Regularization: penalize deviation from default joint positions
-    dof_pos_error = dof_pos - default_dof_pos
-    dof_pos_penalty_temp = 0.1
-    dof_pos_penalty = torch.exp(-dof_pos_penalty_temp * torch.norm(dof_pos_error, dim=-1))
+    # Aggregate reward components
+    total_reward = lin_vel_reward + ang_vel_reward + 0.05 * action_reg_reward
 
-    # Sum all components
-    total_reward = vel_reward + action_penalty + dof_pos_penalty
-
-    # Construct reward component dictionary
-    reward_components = {
-        "vel_reward": vel_reward,
-        "action_penalty": action_penalty,
-        "dof_pos_penalty": dof_pos_penalty
+    # Return the aggregate reward and its components
+    reward_dict = {
+        "lin_vel_reward": lin_vel_reward,
+        "ang_vel_reward": ang_vel_reward,
+        "action_reg_reward": action_reg_reward
     }
 
-    return total_reward, reward_components
+    return total_reward, reward_dict

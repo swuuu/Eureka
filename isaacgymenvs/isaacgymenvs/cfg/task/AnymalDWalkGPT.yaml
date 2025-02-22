@@ -1,0 +1,169 @@
+env:
+  baseInitState:
+    pos:
+    - 0.0
+    - 0.0
+    - 0.55
+    rot:
+    - 0.0
+    - 0.0
+    - 0.0
+    - 1.0
+    vAngular:
+    - 0.0
+    - 0.0
+    - 0.0
+    vLinear:
+    - 0.0
+    - 0.0
+    - 0.0
+  control:
+    actionScale: 0.5
+    actuatorNetFile: actuator_nets/anydrive_v3_lstm.pt
+    damping: 2.0
+    decimation: 4
+    stiffness: 80.0
+    useActuactorNetwork: true
+  defaultJointAngles:
+    LF_HAA: 0.03
+    LF_HFE: 0.4
+    LF_KFE: -0.8
+    LH_HAA: 0.03
+    LH_HFE: -0.4
+    LH_KFE: 0.8
+    RF_HAA: -0.03
+    RF_HFE: 0.4
+    RF_KFE: -0.8
+    RH_HAA: -0.03
+    RH_HFE: -0.4
+    RH_KFE: 0.8
+  enableCameraSensors: false
+  enableDebugVis: false
+  envSpacing: 3.0
+  env_name: anymal_d_walkGPT
+  learn:
+    actionRateRewardScale: -0.01
+    addNoise: true
+    allowKneeContacts: true
+    angularVelocityNoise: 0.2
+    angularVelocityScale: 0.25
+    angularVelocityXYRewardScale: -0.05
+    angularVelocityZRewardScale: 0.5
+    baseHeightRewardScale: -0.0
+    dofPositionNoise: 0.01
+    dofPositionScale: 1.0
+    dofVelocityNoise: 1.5
+    dofVelocityScale: 0.05
+    episodeLength_s: 20
+    feetAirTimeRewardScale: 1.0
+    feetStumbleRewardScale: -0.0
+    frictionRange:
+    - 0.5
+    - 1.25
+    gravityNoise: 0.05
+    heightMeasurementNoise: 0.06
+    heightMeasurementScale: 5.0
+    hipRewardScale: -0.0
+    jointAccRewardScale: -0.0005
+    kneeCollisionRewardScale: -0.25
+    linearVelocityNoise: 0.1
+    linearVelocityScale: 2.0
+    linearVelocityXYRewardScale: 1.0
+    linearVelocityZRewardScale: -4.0
+    noiseLevel: 1.0
+    orientationRewardScale: -0.0
+    pushInterval_s: 15
+    pushRobots: true
+    randomizeFriction: true
+    terminalReward: 0.0
+    torqueRewardScale: -1.0e-05
+  numActions: 12
+  numEnvs: ${resolve_default:4096,${...num_envs}}
+  numObservations: 235
+  randomCommandVelocityRanges:
+    linear_x:
+    - -1.0
+    - 1.0
+    linear_y:
+    - -1.0
+    - 1.0
+    yaw:
+    - -3.14
+    - 3.14
+  terrain:
+    curriculum: true
+    dynamicFriction: 1.0
+    mapLength: 8.0
+    mapWidth: 8.0
+    maxInitMapLevel: 0
+    numLevels: 10
+    numTerrains: 20
+    restitution: 0.0
+    slopeTreshold: 0.5
+    staticFriction: 1.0
+    terrainColTypes:
+    - smooth_pyramid_slope
+    - rough_pyramid_slope
+    - discrete
+    - flat
+    - smooth_pyramid_slope
+    - rough_pyramid_slope
+    - discrete
+    - flat
+    - smooth_pyramid_slope
+    - rough_pyramid_slope
+    - smooth_pyramid_slope
+    - rough_pyramid_slope
+    - discrete
+    - flat
+    - smooth_pyramid_slope
+    - rough_pyramid_slope
+    - discrete
+    - flat
+    - smooth_pyramid_slope
+    - rough_pyramid_slope
+    terrainType: trimesh
+  urdfAsset:
+    collapseFixedJoints: true
+    defaultDofDriveMode: 4
+    file: urdf/anymal_d/urdf/anymal_d_merged.urdf
+    fixBaseLink: false
+    footName: SHANK
+    kneeName: THIGH
+  viewer:
+    lookat:
+    - 1.0
+    - 1
+    - 9
+    pos:
+    - 0
+    - 0
+    - 10
+    refEnv: 0
+name: AnymalDWalkGPT
+physics_engine: physx
+sim:
+  dt: 0.005
+  gravity:
+  - 0.0
+  - 0.0
+  - -9.81
+  physx:
+    bounce_threshold_velocity: 0.5
+    contact_collection: 1
+    contact_offset: 0.01
+    default_buffer_size_multiplier: 5.0
+    max_depenetration_velocity: 100.0
+    max_gpu_contact_pairs: 8388608
+    num_position_iterations: 4
+    num_subscenes: ${....num_subscenes}
+    num_threads: ${....num_threads}
+    num_velocity_iterations: 0
+    rest_offset: 0.0
+    solver_type: ${....solver_type}
+    use_gpu: ${contains:"cuda",${....sim_device}}
+  substeps: 1
+  up_axis: z
+  use_gpu_pipeline: ${eq:${...pipeline},"gpu"}
+task:
+  randomize: false

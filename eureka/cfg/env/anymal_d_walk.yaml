@@ -11,5 +11,5 @@ description: Main goal of the policy is to make the quadruped follow randomly ch
   The policy should optimize for a smooth, flowing gait with a balance between efficiency and adaptability, 
   ensuring the robot moves confidently and predictably across its environment.
 task: AnymalDWalk
-env_name: anymal_d_terrain
+env_name: anymal_d_walk
 max_iterations: 1500

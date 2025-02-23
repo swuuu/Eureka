@@ -193,6 +193,7 @@ def launch_rlg_hydra(cfg: DictConfig):
     with open(os.path.join(experiment_dir, 'config.yaml'), 'w') as f:
         f.write(OmegaConf.to_yaml(cfg))
     rlg_config_dict['params']['config']['log_dir'] = exp_date
+    rlg_config_dict['params']['config']['device'] = cfg.rl_device
 
     # convert CLI arguments into dictionary
     # create runner and set the settings

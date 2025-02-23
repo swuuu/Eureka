@@ -45,9 +45,8 @@ def main(cfg):
     output_file = f"{ISAAC_ROOT_DIR}/tasks/{env_name}{suffix.lower()}.py"
 
     if cfg.run_on_multiple_GPUs:
-        num_GPUS = 2 # on a cluster, we use 2 GPUs for now
-        gpu0 = "cuda:0"
-        gpu1 = "cuda:1"
+        num_GPUS = 3 # on a cluster, we use 3 GPUs for now
+        gpu_names = [f'cuda:{i}' for i in range(num_GPUS)]
 
     # Loading all text prompts
     prompt_dir = f'{EUREKA_ROOT_DIR}/utils/prompts'
@@ -124,7 +123,7 @@ def main(cfg):
         
         code_runs = [] 
         rl_runs = []
-        for i, response_id in enumerate(range(cfg.sample)):
+        for sample_i, response_id in enumerate(range(cfg.sample)):
             response_cur = responses[response_id]["message"]["content"]
             logging.info(f"Iteration {iter}: Processing Code Run {response_id}")
 
@@ -205,7 +204,7 @@ def main(cfg):
                         'force_render=False',
                         f'max_iterations={cfg.max_iterations}']
                 if cfg.run_on_multiple_GPUs:
-                    gpu = gpu0 if (i % num_GPUS) == 0 else gpu1
+                    gpu = gpu_names[sample_i % num_GPUS]
                     args.append(f'sim_device={gpu}')
                     args.append(f'rl_device={gpu}')
                 process = subprocess.Popen(args, stdout=f, stderr=f)

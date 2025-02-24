@@ -90,6 +90,9 @@ env:
     kneeCollisionRewardScale: -0.25 
     feetStumbleRewardScale: -0. #-2.0
     actionRateRewardScale: -0.01
+    contactForceRewardScale: -0.0
+    jointVel: -0.0
+    standStill: -0.0
     # cosmetics
     hipRewardScale: -0. #25
 

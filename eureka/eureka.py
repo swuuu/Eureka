@@ -19,6 +19,13 @@ from utils.extract_task_code import *
 EUREKA_ROOT_DIR = os.getcwd()
 ISAAC_ROOT_DIR = f"{EUREKA_ROOT_DIR}/../isaacgymenvs/isaacgymenvs"
 
+import psutil
+import gc
+def log_memory(tag=""):
+    total_mem = psutil.virtual_memory().total
+    mem = psutil.virtual_memory()
+    print(f"[{tag}] Memory Used: {mem.used / 1e9:.2f} GB / {total_mem / 1e9:.2f} GB ({(mem.used / total_mem) * 100:.2f}%)")
+
 @hydra.main(config_path="cfg", config_name="config", version_base="1.1")
 def main(cfg):
     workspace_dir = Path.cwd()
@@ -75,6 +82,7 @@ def main(cfg):
     max_success_reward_correlation_overall = DUMMY_FAILURE
     max_reward_code_path = None 
     
+    log_memory("Before generating samples from GPT")
     # Eureka generation loop
     for iter in range(cfg.iteration):
         # Get Eureka response
@@ -190,13 +198,14 @@ def main(cfg):
             # Find the freest GPU to run GPU-accelerated RL
             if not cfg.run_on_multiple_GPUs: set_freest_gpu()
             
+            log_memory(f"Before executing IsaacGymEnvs training process sample #{sample_i}")
             # Execute the python file with flags
             rl_filepath = f"env_iter{iter}_response{response_id}.txt"
             with open(rl_filepath, 'w') as f:
                 args = ['python', '-u', f'{ISAAC_ROOT_DIR}/train.py',  
                         'hydra/output=subprocess',
                         f'task={task}{suffix}', 
-                        f'wandb_activate={cfg.use_wandb}',
+                        f'wandb_activate={False}',
                         f'wandb_entity={cfg.wandb_username}', 
                         f'wandb_project={cfg.wandb_project}',
                         f'headless={not cfg.capture_video}', 
@@ -210,6 +219,7 @@ def main(cfg):
                 process = subprocess.Popen(args, stdout=f, stderr=f)
             block_until_training(rl_filepath, log_status=True, iter_num=iter, response_id=response_id)
             rl_runs.append(process)
+            log_memory(f"After executing IsaacGymEnvs training process sample #{sample_i}")
         
         # Gather RL training results and construct reward reflection
         code_feedbacks = []
@@ -218,6 +228,7 @@ def main(cfg):
         reward_correlations = []
         code_paths = []
         
+        log_memory("Before processing results")
         exec_success = False 
         for response_id, (code_run, rl_run) in enumerate(zip(code_runs, rl_runs)):
             rl_run.communicate()
@@ -245,18 +256,20 @@ def main(cfg):
                     if line.startswith('Tensorboard Directory:'):
                         break 
                 tensorboard_logdir = line.split(':')[-1].strip() 
+                log_memory("Before loading TensorBoard logs")
                 tensorboard_logs = load_tensorboard_logs(tensorboard_logdir)
-                max_iterations = np.array(tensorboard_logs['gt_reward']).shape[0]
+                log_memory("After loading TensorBoard logs")
+                max_iterations = 150 # np.array(tensorboard_logs['gt_reward']).shape[0]
                 epoch_freq = max(int(max_iterations // 10), 1)
                 
                 content += policy_feedback.format(epoch_freq=epoch_freq)
                 
-                # Compute Correlation between Human-Engineered and GPT Rewards
-                if "gt_reward" in tensorboard_logs and "gpt_reward" in tensorboard_logs:
-                    gt_reward = np.array(tensorboard_logs["gt_reward"])
-                    gpt_reward = np.array(tensorboard_logs["gpt_reward"])
-                    reward_correlation = np.corrcoef(gt_reward, gpt_reward)[0, 1]
-                    reward_correlations.append(reward_correlation)
+                # # Compute Correlation between Human-Engineered and GPT Rewards TODO: Comment this block!
+                # if "gt_reward" in tensorboard_logs and "gpt_reward" in tensorboard_logs:
+                #     gt_reward = np.array(tensorboard_logs["gt_reward"])
+                #     gpt_reward = np.array(tensorboard_logs["gpt_reward"])
+                #     reward_correlation = np.corrcoef(gt_reward, gpt_reward)[0, 1]
+                #     reward_correlations.append(reward_correlation)
 
                 # Add reward components log to the feedback
                 for metric in tensorboard_logs:
@@ -302,21 +315,23 @@ def main(cfg):
         best_content = contents[best_sample_idx]
             
         max_success = successes[best_sample_idx]
-        max_success_reward_correlation = reward_correlations[best_sample_idx]
+        # max_success_reward_correlation = reward_correlations[best_sample_idx]
         execute_rate = np.sum(np.array(successes) >= 0.) / cfg.sample
 
         # Update the best Eureka Output
         if max_success > max_success_overall:
             max_success_overall = max_success
-            max_success_reward_correlation_overall = max_success_reward_correlation
+            # max_success_reward_correlation_overall = max_success_reward_correlation
             max_reward_code_path = code_paths[best_sample_idx]
 
         execute_rates.append(execute_rate)
         max_successes.append(max_success)
-        max_successes_reward_correlation.append(max_success_reward_correlation)
+        # max_successes_reward_correlation.append(max_success_reward_correlation)
         best_code_paths.append(code_paths[best_sample_idx])
 
-        logging.info(f"Iteration {iter}: Max Success: {max_success}, Execute Rate: {execute_rate}, Max Success Reward Correlation: {max_success_reward_correlation}")
+        # logging.info(f"Iteration {iter}: Max Success: {max_success}, Execute Rate: {execute_rate}, Max Success Reward Correlation: {max_success_reward_correlation}")
+        logging.info(f"Iteration {iter}: Max Success: {max_success}, Execute Rate: {execute_rate}")
+        
         logging.info(f"Iteration {iter}: Best Generation ID: {best_sample_idx}")
         logging.info(f"Iteration {iter}: GPT Output Content:\n" +  responses[best_sample_idx]["message"]["content"] + "\n")
         logging.info(f"Iteration {iter}: User Content:\n" + best_content + "\n")
@@ -350,13 +365,15 @@ def main(cfg):
         # Save dictionary as JSON file
         with open('messages.json', 'w') as file:
             json.dump(messages, file, indent=4)
-    
+    log_memory("After processing results")
     # Evaluate the best reward code many times
     if max_reward_code_path is None: 
         logging.info("All iterations of code generation failed, aborting...")
         logging.info("Please double check the output env_iter*_response*.txt files for repeating errors!")
         exit()
-    logging.info(f"Task: {task}, Max Training Success {max_success_overall}, Correlation {max_success_reward_correlation_overall}, Best Reward Code Path: {max_reward_code_path}")
+    # logging.info(f"Task: {task}, Max Training Success {max_success_overall}, Correlation {max_success_reward_correlation_overall}, Best Reward Code Path: {max_reward_code_path}")
+    logging.info(f"Task: {task}, Max Training Success {max_success_overall}, Best Reward Code Path: {max_reward_code_path}")
+    
     logging.info(f"Evaluating best reward code {cfg.num_eval} times")
     shutil.copy(max_reward_code_path, output_file)
     
@@ -394,14 +411,15 @@ def main(cfg):
         max_success = max(tensorboard_logs['consecutive_successes'])
         reward_code_final_successes.append(max_success)
 
-        if "gt_reward" in tensorboard_logs and "gpt_reward" in tensorboard_logs:
-            gt_reward = np.array(tensorboard_logs["gt_reward"])
-            gpt_reward = np.array(tensorboard_logs["gpt_reward"])
-            reward_correlation = np.corrcoef(gt_reward, gpt_reward)[0, 1]
-            reward_code_correlations_final.append(reward_correlation)
+        # # TODO: Comment this block!
+        # if "gt_reward" in tensorboard_logs and "gpt_reward" in tensorboard_logs:
+        #     gt_reward = np.array(tensorboard_logs["gt_reward"])
+        #     gpt_reward = np.array(tensorboard_logs["gpt_reward"])
+        #     reward_correlation = np.corrcoef(gt_reward, gpt_reward)[0, 1]
+        #     reward_code_correlations_final.append(reward_correlation)
 
     logging.info(f"Final Success Mean: {np.mean(reward_code_final_successes)}, Std: {np.std(reward_code_final_successes)}, Raw: {reward_code_final_successes}")
-    logging.info(f"Final Correlation Mean: {np.mean(reward_code_correlations_final)}, Std: {np.std(reward_code_correlations_final)}, Raw: {reward_code_correlations_final}")
+    # logging.info(f"Final Correlation Mean: {np.mean(reward_code_correlations_final)}, Std: {np.std(reward_code_correlations_final)}, Raw: {reward_code_correlations_final}")
     np.savez('final_eval.npz', reward_code_final_successes=reward_code_final_successes, reward_code_correlations_final=reward_code_correlations_final)
 
 

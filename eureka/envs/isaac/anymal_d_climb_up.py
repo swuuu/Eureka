@@ -45,6 +45,9 @@ class AnymalDClimbUp(VecTask):
         self.rew_scales["stumble"] = self.cfg["env"]["learn"]["feetStumbleRewardScale"]
         self.rew_scales["action_rate"] = self.cfg["env"]["learn"]["actionRateRewardScale"]
         self.rew_scales["hip"] = self.cfg["env"]["learn"]["hipRewardScale"]
+        self.rew_scales["feet_contact_forces"] = self.cfg["env"]["learn"]["contactForceRewardScale"]
+        self.rew_scales["joint_vel"] = self.cfg["env"]["learn"]["jointVel"]
+        self.rew_scales["stand_still"] = self.cfg["env"]["learn"]["standStill"]
 
         self.command_x_range = self.cfg["env"]["randomCommandVelocityRanges"]["linear_x"]
         self.command_y_range = self.cfg["env"]["randomCommandVelocityRanges"]["linear_y"]
@@ -117,7 +120,8 @@ class AnymalDClimbUp(VecTask):
         torch_zeros = lambda : torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
         self.episode_sums = {"lin_vel_xy": torch_zeros(), "lin_vel_z": torch_zeros(), "ang_vel_z": torch_zeros(), "ang_vel_xy": torch_zeros(),
                              "orient": torch_zeros(), "torques": torch_zeros(), "joint_acc": torch_zeros(), "base_height": torch_zeros(),
-                             "air_time": torch_zeros(), "collision": torch_zeros(), "stumble": torch_zeros(), "action_rate": torch_zeros(), "hip": torch_zeros()}
+                             "air_time": torch_zeros(), "collision": torch_zeros(), "stumble": torch_zeros(), "action_rate": torch_zeros(), "hip": torch_zeros(),
+                             "dof_vel": torch_zeros(), "stand_still": torch_zeros(), "contact_forces": torch_zeros()}
 
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
         self.init_done = True
@@ -296,6 +300,8 @@ class AnymalDClimbUp(VecTask):
 
         rew_torque = torch.sum(torch.square(self.torques), dim=1) * self.rew_scales["torque"]
 
+        rew_dof_vel = torch.sum(torch.square(self.dof_vel), dim=1) * self.rew_scales["joint_vel"]
+
         rew_joint_acc = torch.sum(torch.square(self.last_dof_vel - self.dof_vel), dim=1) * self.rew_scales["joint_acc"]
 
         knee_contact = torch.norm(self.contact_forces[:, self.knee_indices, :], dim=2) > 1.
@@ -313,10 +319,15 @@ class AnymalDClimbUp(VecTask):
         rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
         self.feet_air_time *= ~contact
 
+        rew_stand_still = torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1) * self.rew_scales["stand_still"]
+
+        max_contact_force = 500
+        rew_contact_forces = torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) - max_contact_force).clip(min=0.), dim=1) * self.rew_scales["feet_contact_forces"]
+
         rew_hip = torch.sum(torch.abs(self.dof_pos[:, [0, 3, 6, 9]] - self.default_dof_pos[:, [0, 3, 6, 9]]), dim=1)* self.rew_scales["hip"]
 
         self.rew_buf = rew_lin_vel_xy + rew_ang_vel_z + rew_lin_vel_z + rew_ang_vel_xy + rew_orient + rew_base_height +\
-                    rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_airTime + rew_hip + rew_stumble
+                    rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_airTime + rew_hip + rew_stumble + rew_dof_vel + rew_stand_still + rew_contact_forces
         self.rew_buf = torch.clip(self.rew_buf, min=0., max=None)
 
         self.rew_buf += self.rew_scales["termination"] * self.reset_buf * ~self.timeout_buf
@@ -333,6 +344,9 @@ class AnymalDClimbUp(VecTask):
         self.episode_sums["action_rate"] += rew_action_rate
         self.episode_sums["air_time"] += rew_airTime
         self.episode_sums["base_height"] += rew_base_height
+        self.episode_sums["dof_vel"] += rew_dof_vel
+        self.episode_sums["stand_still"] += rew_stand_still
+        self.episode_sums["contact_forces"] += rew_contact_forces
         self.episode_sums["hip"] += rew_hip
 
     def reset_idx(self, env_ids):

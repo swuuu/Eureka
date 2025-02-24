@@ -274,6 +274,9 @@ def main(cfg):
                 # Add reward components log to the feedback
                 for metric in tensorboard_logs:
                     if "/" not in metric:
+                        if len(tensorboard_logs[metric]) == 0:  # Skip empty metrics
+                            logging.info(f"Skipping empty metric: {metric}")
+                            continue
                         metric_cur = ['{:.2f}'.format(x) for x in tensorboard_logs[metric][::epoch_freq]]
                         metric_cur_max = max(tensorboard_logs[metric])
                         metric_cur_mean = sum(tensorboard_logs[metric]) / len(tensorboard_logs[metric])

@@ -349,6 +349,9 @@ class AnymalDClimbUp(VecTask):
         self.episode_sums["contact_forces"] += rew_contact_forces
         self.episode_sums["hip"] += rew_hip
 
+        consecutive_successes = -(lin_vel_error + ang_vel_error).mean()
+        self.extras['consecutive_successes'] = consecutive_successes() 
+
     def reset_idx(self, env_ids):
         positions_offset = torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof), device=self.device)
         velocities = torch_rand_float(-0.1, 0.1, (len(env_ids), self.num_dof), device=self.device)

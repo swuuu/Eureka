@@ -302,7 +302,7 @@ class AnymalDClimbUp(VecTask):
 
         rew_dof_vel = torch.sum(torch.square(self.dof_vel), dim=1) * self.rew_scales["joint_vel"]
 
-        rew_joint_acc = torch.sum(torch.square(self.last_dof_vel - self.dof_vel), dim=1) * self.rew_scales["joint_acc"]
+        rew_joint_acc = torch.sum(torch.square(self.last_dof_vel - self.dof_vel) / self.dt, dim=1) * self.rew_scales["joint_acc"]
 
         knee_contact = torch.norm(self.contact_forces[:, self.knee_indices, :], dim=2) > 1.
         rew_collision = torch.sum(knee_contact, dim=1) * self.rew_scales["collision"] # sum vs any ?

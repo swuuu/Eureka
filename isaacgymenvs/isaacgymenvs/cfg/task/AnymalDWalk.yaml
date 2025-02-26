@@ -79,15 +79,15 @@ env:
     # rewards
     terminalReward: 0.0
     linearVelocityXYRewardScale: 1.0
-    linearVelocityZRewardScale: -4.0
+    linearVelocityZRewardScale: -1.5
     angularVelocityXYRewardScale: -0.05
     angularVelocityZRewardScale: 0.5
     orientationRewardScale: -0. #-1.
     torqueRewardScale: -0.00001 # -0.000025
-    jointAccRewardScale: -0.0005 # -0.0025
+    jointAccRewardScale: -2.5e-7 # -0.0025
     baseHeightRewardScale: -0.0 #5
     feetAirTimeRewardScale:  1.0
-    kneeCollisionRewardScale: -0.25 
+    kneeCollisionRewardScale: -0.5 # -0.25 
     feetStumbleRewardScale: -0. #-2.0
     actionRateRewardScale: -0.01
     contactForceRewardScale: -0.0

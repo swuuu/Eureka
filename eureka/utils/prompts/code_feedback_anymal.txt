@@ -1,0 +1,9 @@
+Please carefully analyze the policy feedback and provide a new, improved reward function that can better solve the task. Some helpful tips for analyzing the policy feedback:
+    (1) The task-score is defined such that the maximum value is 0 (best value possible). A low task-score can be defined as a score less than -3, in which case, the reward function should be re-written completely. A task-score that is above -0.2 is considered very good, but greater than -0.1 is even better.
+    (2) If the values for a certain reward component are near identical throughout, then this means RL is not able to optimize this component as it is written. You may consider
+        (a) Changing its scale or the value of its temperature parameter
+        (b) Re-writing the reward component 
+        (c) Discarding the reward component
+    (3) If some reward components have significantly larger magnitudes, consider whether this is necessary for task success. Only re-scale them if smaller components are getting ignored or if training is unstable. Otherwise, dominant rewards might be appropriate.
+    (4) If the task-score is good enough (e.g., greater than -0.2), you can focus on optimizing other parameters without sacrificing the task-score.
+Please analyze each existing reward component in the suggested manner above first, and then write the reward function code. 

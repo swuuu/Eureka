@@ -59,7 +59,7 @@ def main(cfg):
     prompt_dir = f'{EUREKA_ROOT_DIR}/utils/prompts'
     initial_system = file_to_string(f'{prompt_dir}/initial_system.txt')
     code_output_tip = file_to_string(f'{prompt_dir}/code_output_tip.txt')
-    code_feedback = file_to_string(f'{prompt_dir}/code_feedback.txt')
+    code_feedback = file_to_string(f'{prompt_dir}/code_feedback_anymal.txt')
     initial_user = file_to_string(f'{prompt_dir}/initial_user.txt')
     reward_signature = file_to_string(f'{prompt_dir}/reward_signature.txt')
     policy_feedback = file_to_string(f'{prompt_dir}/policy_feedback.txt')
@@ -259,7 +259,7 @@ def main(cfg):
                 log_memory("Before loading TensorBoard logs")
                 tensorboard_logs = load_tensorboard_logs(tensorboard_logdir)
                 log_memory("After loading TensorBoard logs")
-                max_iterations = 150 # np.array(tensorboard_logs['gt_reward']).shape[0]
+                max_iterations = np.array(tensorboard_logs['consecutive_successes']).shape[0]
                 epoch_freq = max(int(max_iterations // 10), 1)
                 
                 content += policy_feedback.format(epoch_freq=epoch_freq)

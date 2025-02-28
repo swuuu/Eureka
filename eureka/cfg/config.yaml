@@ -27,3 +27,4 @@ wandb_project: "" # wandb project if logging with wandb
 
 # Custom
 run_on_multiple_GPUs: False
+batch_size: 1

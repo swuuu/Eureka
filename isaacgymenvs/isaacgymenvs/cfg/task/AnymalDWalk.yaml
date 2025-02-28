@@ -68,7 +68,7 @@ env:
 
   urdfAsset:
     file: "urdf/anymal_d/urdf/anymal_d_merged.urdf"
-    footName: SHANK # SHANK if collapsing fixed joint, FOOT otherwise
+    footName: FOOT # SHANK if collapsing fixed joint, FOOT otherwise
     kneeName: THIGH
     collapseFixedJoints: True
     fixBaseLink: false

@@ -462,6 +462,7 @@ class AnymalDWalk(VecTask):
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.
         self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
+        self.extras["terrain_level"] = torch.mean(self.terrain_levels.float())
 
     def update_terrain_level(self, env_ids):
         if not self.init_done or not self.curriculum:
@@ -635,10 +636,10 @@ class AnymalDWalk(VecTask):
         self.swing_duration[new_gait_cycle] = 0.
         self.stance_duration[new_gait_cycle] = 0.
 
-        # # Debug
-        # print(f"Stance Duration: {self.stance_duration.mean().item():.3f}, Swing Duration: {self.swing_duration.mean().item():.3f}")
-        # print(f"Stride Duration: {self.stride_duration.mean().item():.3f}, Stride Frequency: {self.extras['stride_frequency'].item():.3f}")
-        # print(f"Duty Factor: {self.extras['duty_factor'].item():.3f}")
+        ## Debug
+        #print(f"Stance Duration: {self.stance_duration.mean().item():.3f}, Swing Duration: {self.swing_duration.mean().item():.3f}")
+        #print(f"Stride Duration: {self.stride_duration.mean().item():.3f}, Stride Frequency: {self.extras['stride_frequency'].item():.3f}")
+        #print(f"Duty Factor: {self.extras['duty_factor'].item():.3f}")
 
 
 

@@ -401,6 +401,7 @@ class AnymalDWalk(VecTask):
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.
         self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
+        self.extras["terrain_level"] = torch.mean(self.terrain_levels.float())
 
     def update_terrain_level(self, env_ids):
         if not self.init_done or not self.curriculum:

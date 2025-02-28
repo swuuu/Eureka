@@ -1,15 +1,11 @@
-description: Main goal of the policy is to make the quadruped follow randomly chosen x,y, and yaw target velocities.
-  This class corresponds to the Staircase Ascent Locomotion task. The environment consists of a quadruped robot navigating up a 
-  staircase with consistent step heights and moderate inclines. The goal is to learn a stable and natural climbing gait that 
-  allows the robot to ascend efficiently without excessive energy expenditure. The robot should exhibit a slight forward lean to
-  maintain balance and prevent backward tipping. 
-  Foot placements should be precise and well-timed to ensure consistent contact with each stair, avoiding missteps or slipping.
-  The gait should be controlled and deliberate, with smooth, coordinated leg movements to prevent excessive joint strain and maintain 
-  continuous forward momentum. Foot swings should be just high enough to clear each step while minimizing unnecessary motion. 
-  The robot should use its body posture and momentum effectively, distributing weight appropriately between the front and rear legs to ensure stability on inclined surfaces.
-  Robustness to minor perturbations is essential—if the robot encounters slight variations in stair height or surface texture, 
-  it should be able to adapt and recover rather than stumbling. The final policy should prioritize safety, efficiency, and real-world deployability, 
-  minimizing high-impact forces and excessive torque spikes while maintaining a confident and fluid climbing motion.
+description: The primary goal of the policy is to enable the quadruped robot to accurately track randomly chosen x, y, and yaw velocity commands while climbing up stairs. Ascending stairs is the ONLY terrain the robot will face.
+  In addition to precise velocity tracking, the policy should optimize several secondary objectives crucial for real-world deployment, such as
+  - Smooth and controlled footstep swings that are biomechanically reasonable.
+  - Energy efficiency to extend runtime.
+  - Low-impact foot contacts to minimize stress on the robot's structure.
+  - Stability against small external disturbances to enhance robustness.
+  - No movements for 0 velocity commands.
+  While these secondary objectives may sometimes conflict, the policy should strike a balance to ensure safe, efficient, and reliable locomotion to ascend stairs on real hardware.
 task: AnymalDClimbUp
 env_name: anymal_d_climb_up
 max_iterations: 1500

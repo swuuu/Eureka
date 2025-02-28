@@ -124,6 +124,15 @@ class AnymalDClimbUp(VecTask):
                              "dof_vel": torch_zeros(), "stand_still": torch_zeros(), "contact_forces": torch_zeros()}
 
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
+
+        self.swing_duration = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
+        self.stance_duration = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
+        self.duty_factor = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
+        self.contact_prev = torch.ones(self.num_envs, 4, dtype=torch.bool, device=self.device, requires_grad=False)
+        self.stride_duration = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
+        self.stride_frequency = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
+
         self.init_done = True
 
         if cfg["env"]["control"]["useActuactorNetwork"]:
@@ -392,6 +401,7 @@ class AnymalDClimbUp(VecTask):
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.
         self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
+        self.extras["terrain_level"] = torch.mean(self.terrain_levels.float())
 
     def update_terrain_level(self, env_ids):
         if not self.init_done or not self.curriculum:
@@ -444,6 +454,7 @@ class AnymalDClimbUp(VecTask):
 
         self.check_termination()
         self.compute_reward()
+        self.compute_gait_metrics()
         env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
         if len(env_ids) > 0:
             self.reset_idx(env_ids)
@@ -506,6 +517,44 @@ class AnymalDClimbUp(VecTask):
 
         return heights.view(self.num_envs, -1) * self.terrain.vertical_scale
     
+    def compute_gait_metrics(self):
+        contact = self.contact_forces[:, self.feet_indices, 2] > 1.
+        is_moving = (torch.norm(self.commands[:, :2], dim=1) > 0.1).unsqueeze(1).expand(-1, 4)
+        new_gait_cycle = contact & (~self.contact_prev) & is_moving
+        self.contact_prev = contact.clone()  # Update previous frame contact state
+
+        self.swing_duration += (self.dt * torch.logical_not(contact))
+        self.stance_duration += (self.dt * contact)
+
+        self.duty_factor[new_gait_cycle] = self.stance_duration[new_gait_cycle] / \
+            (self.stance_duration[new_gait_cycle] + self.swing_duration[new_gait_cycle] + 1e-8)
+
+        is_standing = torch.norm(self.commands[:, :2], dim=1) <= 0.1
+        self.swing_duration[is_standing] = 0.
+        self.stance_duration[is_standing] = 0.
+
+        mask = self.duty_factor > 0.
+        if mask.sum() > 0:
+            self.extras['duty_factor'] = self.duty_factor[mask].mean()
+        else:
+            self.extras['duty_factor'] = torch.tensor(0.0, device=self.device)
+
+        self.stride_duration[new_gait_cycle] = self.stance_duration[new_gait_cycle] + self.swing_duration[new_gait_cycle]
+        self.stride_frequency[new_gait_cycle] = 1.0 / (self.stride_duration[new_gait_cycle] + 1e-8)
+
+        self.stride_duration[is_standing] = 0.
+        self.stride_frequency[is_standing] = 0.
+
+        mask = self.stride_frequency > 0.
+        if mask.sum() > 0:
+            self.extras['stride_frequency'] = self.stride_frequency[mask].mean()
+        else:
+            self.extras['stride_frequency'] = torch.tensor(0.0, device=self.device)
+
+        self.swing_duration[new_gait_cycle] = 0.
+        self.stance_duration[new_gait_cycle] = 0.
+
+
     def _is_robot_out_of_terrain_env(self):
         env_bound_upper_x = self.env_origins[:, 0] + self.terrain.env_length * 0.5
         env_bound_lower_x = self.env_origins[:, 0] - self.terrain.env_length * 0.5

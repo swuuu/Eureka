@@ -91,7 +91,7 @@ def main(cfg):
         total_samples = 0
         total_token = 0
         total_completion_token = 0
-        chunk_size = cfg.sample if "gpt-3.5" in model else 4
+        chunk_size = cfg.sample
 
         logging.info(f"Iteration {iter}: Generating {cfg.sample} samples with {cfg.model}")
 

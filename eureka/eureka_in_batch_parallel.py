@@ -91,7 +91,7 @@ def main(cfg):
         total_samples_generated = 0
         total_token = 0
         total_completion_token = 0
-        chunk_size = cfg.sample if "gpt-3.5" in model else 4
+        chunk_size = cfg.sample
 
         logging.info(f"Iteration {iter}: Generating {cfg.sample} samples with {cfg.model}")
 
@@ -128,7 +128,6 @@ def main(cfg):
         logging.info(f"Iteration {iter}: Prompt Tokens: {prompt_tokens}, Completion Tokens: {total_completion_token}, Total Tokens: {total_token}")
 
         code_runs = []
-        rl_runs = []
 
         # New hyperparameter: batch_size (e.g., provided via cfg)
         batch_size = cfg.batch_size  # Number of processes to run in parallel per batch
@@ -137,7 +136,7 @@ def main(cfg):
         # Process samples in batches
         for batch_start in range(0, total_samples, batch_size):
             batch_end = min(batch_start + batch_size, total_samples)
-            batch_processes = []
+            batch_process_runs = []
 
             for sample_i in range(batch_start, batch_end):
                 response_id = sample_i
@@ -212,29 +211,30 @@ def main(cfg):
 
                 log_memory(f"Before executing IsaacGymEnvs training process sample #{sample_i}")
                 rl_filepath = f"env_iter{iter}_response{response_id}.txt"
-                f_out = open(rl_filepath, 'w')
-                args = ['python', '-u', f'{ISAAC_ROOT_DIR}/train.py',
-                        'hydra/output=subprocess',
-                        f'task={task}{suffix}',
-                        f'wandb_activate={False}',
-                        f'wandb_entity={cfg.wandb_username}',
-                        f'wandb_project={cfg.wandb_project}',
-                        f'headless={not cfg.capture_video}',
-                        f'capture_video={cfg.capture_video}',
-                        'force_render=False',
-                        f'max_iterations={cfg.max_iterations}']
-                if cfg.run_on_multiple_GPUs:
-                    gpu = gpu_names[sample_i % num_GPUS]
-                    args.append(f'sim_device={gpu}')
-                    args.append(f'rl_device={gpu}')
-                process = subprocess.Popen(args, stdout=f_out, stderr=f_out)
-                batch_processes.append((process, rl_filepath, iter, response_id))
+                with open(rl_filepath, 'w') as f:
+                    args = ['python', '-u', f'{ISAAC_ROOT_DIR}/train.py',  
+                            'hydra/output=subprocess',
+                            f'task={task}{suffix}', 
+                            f'wandb_activate={False}',
+                            f'wandb_entity={cfg.wandb_username}', 
+                            f'wandb_project={cfg.wandb_project}',
+                            f'headless={not cfg.capture_video}', 
+                            f'capture_video={cfg.capture_video}', 
+                            'force_render=False',
+                            f'max_iterations={cfg.max_iterations}']
+                    if cfg.run_on_multiple_GPUs:
+                        gpu = gpu_names[sample_i % num_GPUS]
+                        args.append(f'sim_device={gpu}')
+                        args.append(f'rl_device={gpu}')
+                    process = subprocess.Popen(args, stdout=f, stderr=f)
+                block_until_training(rl_filepath, log_status=True, iter_num=iter, response_id=response_id)
+                # batch_processes.append((process, rl_filepath, iter, response_id))
+                batch_process_runs.append(process)
                 log_memory(f"After executing IsaacGymEnvs training process sample #{sample_i}")
 
-            # After launching the current batch, wait for all processes in the batch to finish
-            for proc, rl_filepath, iter_num, response_id in batch_processes:
-                block_until_training(rl_filepath, log_status=True, iter_num=iter_num, response_id=response_id)
-                rl_runs.append(proc)
+            # block until all processes in current run have finisehd
+            for proc in batch_process_runs:
+                proc.communicate()
 
         # Gather RL training results and construct reward reflection
         code_feedbacks = []
@@ -245,8 +245,7 @@ def main(cfg):
         
         log_memory("Before processing results")
         exec_success = False 
-        for response_id, (code_run, rl_run) in enumerate(zip(code_runs, rl_runs)):
-            rl_run.communicate()
+        for response_id, code_run in enumerate(code_runs):
             rl_filepath = f"env_iter{iter}_response{response_id}.txt"
             code_paths.append(f"env_iter{iter}_response{response_id}.py")
             try:

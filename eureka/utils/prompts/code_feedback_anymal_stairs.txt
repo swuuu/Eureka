@@ -1,0 +1,9 @@
+Please carefully analyze the policy feedback and provide a new, improved reward function that can better solve the task. Some helpful tips for analyzing the policy feedback:
+    (1) The task-score represents the average terrain difficulty level that the robots have solved. An increasing difficulty primarily means larger step heights. The higher the better. If the task-score is always at 0, please re-write the reward function.
+    (2) If the values for a certain reward component are near identical throughout, then this means RL is not able to optimize this component as it is written. You may consider
+        (a) Changing its scale or the value of its temperature parameter
+        (b) Re-writing the reward component 
+        (c) Discarding the reward component
+    (3) If some reward components have significantly larger magnitudes, consider whether this is necessary for task success. Only re-scale them if smaller components are getting ignored or if training is unstable. Otherwise, dominant rewards might be appropriate.
+    (4) We want to achieve a biomechanically reasonable walking gait. If the policy feedback has the duty factor and stride frequency metrics, please try to make the duty factor greater than 0.5 and the stride frequency between 1-1.5Hz (standard ranges of a walking gait).
+Please analyze each existing reward component in the suggested manner above first, and then write the reward function code. 

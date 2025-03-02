@@ -59,7 +59,12 @@ def main(cfg):
     prompt_dir = f'{EUREKA_ROOT_DIR}/utils/prompts'
     initial_system = file_to_string(f'{prompt_dir}/initial_system.txt')
     code_output_tip = file_to_string(f'{prompt_dir}/code_output_tip.txt')
-    code_feedback = file_to_string(f'{prompt_dir}/code_feedback_anymal.txt')
+    if task == "AnymalDWalk":
+        code_feedback = file_to_string(f'{prompt_dir}/code_feedback_anymal.txt')
+    elif task == "AnymalDClimbUp" or task == "AnymalDClimbDown":
+        code_feedback = file_to_string(f'{prompt_dir}/code_feedback_anymal_stairs.txt')
+    else:
+        code_feedback = file_to_string(f'{prompt_dir}/code_feedback.txt')
     initial_user = file_to_string(f'{prompt_dir}/initial_user.txt')
     reward_signature = file_to_string(f'{prompt_dir}/reward_signature.txt')
     policy_feedback = file_to_string(f'{prompt_dir}/policy_feedback.txt')
@@ -242,6 +247,7 @@ def main(cfg):
         successes = []
         reward_correlations = []
         code_paths = []
+        max_terrain_levels_solved = []
         
         log_memory("Before processing results")
         exec_success = False 
@@ -307,6 +313,8 @@ def main(cfg):
                             # Provide ground-truth score when success rate not applicable
                             if "consecutive_successes" not in tensorboard_logs:
                                 content += f"ground-truth score: {metric_cur}, Max: {metric_cur_max:.2f}, Mean: {metric_cur_mean:.2f}, Min: {metric_cur_min:.2f} \n"                    
+                        if "terrain_level" == metric:
+                            max_terrain_levels_solved.append(metric_cur_max)  
                 code_feedbacks.append(code_feedback)
                 content += code_feedback  
             else:
@@ -314,6 +322,7 @@ def main(cfg):
                 successes.append(DUMMY_FAILURE)
                 reward_correlations.append(DUMMY_FAILURE)
                 content += execution_error_feedback.format(traceback_msg=traceback_msg)
+                max_terrain_levels_solved.append(DUMMY_FAILURE)
 
             content += code_output_tip
             contents.append(content) 
@@ -352,6 +361,15 @@ def main(cfg):
         logging.info(f"Iteration {iter}: Best Generation ID: {best_sample_idx}")
         logging.info(f"Iteration {iter}: GPT Output Content:\n" +  responses[best_sample_idx]["message"]["content"] + "\n")
         logging.info(f"Iteration {iter}: User Content:\n" + best_content + "\n")
+
+        # Get the policy with the highest level terrain solved
+        if len(max_terrain_levels_solved) == 0:
+            print("Terrain levels solved is empty!")
+        else:
+            max_terrain_level_idx = np.argmax(np.array(max_terrain_levels_solved))
+            logging.info(f"Iteration {iter}: Best Terrain Level Policy ID: {max_terrain_level_idx}")
+            logging.info(f"Iteration {iter}: Highest Terrain Level Solved: {max_terrain_levels_solved[max_terrain_level_idx]}")
+            logging.info(f"Iteration {iter}: Best Terrain Level Code Path: {code_paths[max_terrain_level_idx]}")
             
         # Plot the success rate
         fig, axs = plt.subplots(2, figsize=(6, 6))

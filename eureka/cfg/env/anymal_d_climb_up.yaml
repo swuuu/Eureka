@@ -1,11 +1,12 @@
-description: The primary goal of the policy is to enable the quadruped robot to accurately track randomly chosen x, y, and yaw velocity commands while climbing up stairs. Ascending stairs is the ONLY terrain the robot will face.
+description: The primary goal of the policy is to enable the quadruped robot to accurately track randomly chosen x, y, and yaw velocity commands while climbing up increasingly harder stairs. Ascending stairs is the ONLY terrain the robot will face.
   In addition to precise velocity tracking, the policy should optimize several secondary objectives crucial for real-world deployment, such as
   - Smooth and controlled footstep swings that are biomechanically reasonable.
   - Energy efficiency to extend runtime.
   - Low-impact foot contacts to minimize stress on the robot's structure.
   - Stability against small external disturbances to enhance robustness.
   - No movements for 0 velocity commands.
-  While these secondary objectives may sometimes conflict, the policy should strike a balance to ensure safe, efficient, and reliable locomotion to ascend stairs on real hardware.
+  While these secondary objectives may sometimes conflict, the policy should strike a balance to ensure safe, efficient, and reliable locomotion to ascend stairs on real hardware. Note that ascending stairs of increasing step heights
+  is a challenging task itself, so please consider optimizing stair climbing as the primary objective.
   Some additional tips when designing a reward function are
   - To determine if a foot is in contact with the ground, compute self.contact_forces[:, self.feet_indices, 2] > 1.
   - To determine feet contact forces, compute torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1)

@@ -418,8 +418,8 @@ class AnymalDClimbUp(VecTask):
         self.episode_sums["hip"] += rew_hip
 
         # for eureka.py
-        consecutive_successes = -(lin_vel_error + ang_vel_error).mean()
-        self.extras['consecutive_successes'] = consecutive_successes
+        # consecutive_successes = -(lin_vel_error + ang_vel_error).mean()
+        # self.extras['consecutive_successes'] = consecutive_successes
 
     def reset_idx(self, env_ids):
         positions_offset = torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof), device=self.device)
@@ -463,15 +463,17 @@ class AnymalDClimbUp(VecTask):
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.
         self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
-        self.extras["terrain_level"] = torch.mean(self.terrain_levels.float())
+        # self.extras["terrain_level"] = torch.mean(self.terrain_levels.float())
+        self.extras['consecutive_successes'] = torch.mean(self.terrain_levels.float())
 
     def update_terrain_level(self, env_ids):
         if not self.init_done or not self.curriculum:
             # don't change on initial reset
             return
         distance = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
-        self.terrain_levels[env_ids] -= 1 * (distance < torch.norm(self.commands[env_ids, :2])*self.max_episode_length_s*0.25)
-        self.terrain_levels[env_ids] += 1 * (distance > self.terrain.env_length / 2)
+        move_up = (distance > self.terrain.env_length / 2)
+        self.terrain_levels[env_ids] += 1 * move_up
+        self.terrain_levels[env_ids] -= 1 * (distance < torch.norm(self.commands[env_ids, :2])*self.max_episode_length_s*0.25) * ~move_up
         self.terrain_levels[env_ids] = torch.clip(self.terrain_levels[env_ids], 0) % self.terrain.env_rows
         self.env_origins[env_ids] = self.terrain_origins[self.terrain_levels[env_ids], self.terrain_types[env_ids]]
 

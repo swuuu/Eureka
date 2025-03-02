@@ -59,7 +59,12 @@ def main(cfg):
     prompt_dir = f'{EUREKA_ROOT_DIR}/utils/prompts'
     initial_system = file_to_string(f'{prompt_dir}/initial_system.txt')
     code_output_tip = file_to_string(f'{prompt_dir}/code_output_tip.txt')
-    code_feedback = file_to_string(f'{prompt_dir}/code_feedback_anymal.txt')
+    if task == "AnymalDWalk":
+        code_feedback = file_to_string(f'{prompt_dir}/code_feedback_anymal.txt')
+    elif task == "AnymalDClimbUp" or task == "AnymalDClimbDown":
+        code_feedback = file_to_string(f'{prompt_dir}/code_feedback_anymal_stairs.txt')
+    else:
+        code_feedback = file_to_string(f'{prompt_dir}/code_feedback.txt')
     initial_user = file_to_string(f'{prompt_dir}/initial_user.txt')
     reward_signature = file_to_string(f'{prompt_dir}/reward_signature.txt')
     policy_feedback = file_to_string(f'{prompt_dir}/policy_feedback.txt')

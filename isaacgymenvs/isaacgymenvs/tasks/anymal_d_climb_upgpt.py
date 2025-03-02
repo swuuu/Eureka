@@ -295,7 +295,7 @@ class AnymalDClimbUpGPT(VecTask):
                                     ), dim=-1)
 
     def compute_reward(self):
-        self.rew_buf[:], self.rew_dict = compute_reward(self.root_states, self.commands, self.base_lin_vel, self.base_ang_vel, self.dof_pos, self.dof_vel, self.actions, self.projected_gravity)
+        self.rew_buf[:], self.rew_dict = compute_reward(self.base_lin_vel, self.base_ang_vel, self.commands, self.contact_forces, self.torques, self.dof_vel)
         self.extras['gpt_reward'] = self.rew_buf.mean()
         for rew_state in self.rew_dict: self.extras[rew_state] = self.rew_dict[rew_state].mean()
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
@@ -590,42 +590,65 @@ import math
 import torch
 from torch import Tensor
 @torch.jit.script
-def compute_reward(root_states: torch.Tensor, commands: torch.Tensor, base_lin_vel: torch.Tensor, base_ang_vel: torch.Tensor, dof_pos: torch.Tensor, dof_vel: torch.Tensor, actions: torch.Tensor, projected_gravity: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-    # Primary reward component: velocity tracking
-    vel_tracking_reward = torch.exp(-0.5 * (commands[:, :3] - base_lin_vel[:, :3]).pow(2).sum(dim=-1))
-    
-    # Smooth and controlled footstep swings
-    dof_pos_change = dof_pos - dof_pos.roll(1, 0)
-    smooth_swings_reward = torch.exp(-0.1 * (dof_pos_change.pow(2).sum(dim=-1)))
-    
-    # Energy efficiency
-    energy_usage = (actions.pow(2).sum(dim=-1))
-    energy_efficiency_reward = torch.exp(-0.01 * energy_usage)
-    
-    # Low-impact foot contacts
-    contact_impact_reward = torch.exp(-0.1 * (dof_vel.pow(2).sum(dim=-1)))
-    
-    # Stability against small disturbances
-    stability_reward = torch.exp(-0.1 * ((projected_gravity - torch.tensor([0, 0, 1], device=projected_gravity.device)).pow(2).sum(dim=-1)))
-    
-    # No movements for 0 velocity commands
-    no_movement_penalty = torch.where(commands[:, :3].abs().sum(dim=-1) < 1e-5, -actions.pow(2).sum(dim=-1), torch.tensor(0.0, device=actions.device))
-    
-    # Combining reward components
-    total_reward = (vel_tracking_reward + smooth_swings_reward + energy_efficiency_reward +
-                    contact_impact_reward + stability_reward + no_movement_penalty)
-    
-    # Normalizing total reward
-    temperature_total = 0.2
-    total_reward = torch.exp(total_reward / temperature_total) - 1.0
+def compute_reward(
+    base_lin_vel: torch.Tensor, 
+    base_ang_vel: torch.Tensor, 
+    commands: torch.Tensor, 
+    contact_forces: torch.Tensor, 
+    torques: torch.Tensor, 
+    dof_vel: torch.Tensor
+) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
 
+    # Adjusted Reward Parameters
+    vel_tracking_weight = 1.0
+    smooth_swings_weight = 0.5  # Increased
+    energy_efficiency_weight = 0.5  # Changed for more focus
+    low_impact_weight = 0.5  # Strengthened
+    stability_weight = 0.5  # Strengthened
+    no_movement_penalty_weight = 0.5
+
+    # Calculate velocity tracking reward
+    lin_vel_error = torch.norm(base_lin_vel[:, :2] - commands[:, :2], dim=1)
+    yaw_error = torch.abs(base_ang_vel[:, 2] - commands[:, 2])
+    vel_tracking_reward = torch.exp(-vel_tracking_weight * (lin_vel_error + yaw_error))
+
+    # Revisit smooth and controlled swing reward
+    temp_smooth_swings = 1.0
+    foot_velocity_changes = torch.diff(contact_forces, dim=1).abs().mean(dim=(1, 2))
+    smooth_swings_reward = torch.exp(-smooth_swings_weight * foot_velocity_changes / temp_smooth_swings)
+
+    # Re-write energy efficiency reward to capture energy minimize
+    temp_energy = 0.1
+    energy_consumed = torch.sum(torques * dof_vel, dim=1)
+    energy_efficiency_reward = torch.exp(-energy_efficiency_weight * energy_consumed / temp_energy)
+
+    # Enhance low-impact foot contacts reward
+    temp_low_impact = 1.0
+    foot_impact_forces = torch.norm(contact_forces, dim=-1).mean(dim=-1)
+    low_impact_reward = torch.exp(-low_impact_weight * foot_impact_forces / temp_low_impact)
+
+    # Boost stability reward
+    temp_stability = 1.0
+    stability_variance = torch.var(contact_forces, dim=(1, 2))
+    stability_reward = torch.exp(-stability_weight * stability_variance / temp_stability)
+
+    # No movement modification for zero velocity commands
+    no_movement_penalty = torch.zeros_like(lin_vel_error)
+    zero_command_mask = (commands[:, :3].abs() < 1e-5).all(dim=1)
+    no_movement_penalty[zero_command_mask] = torch.norm(base_lin_vel[zero_command_mask, :], dim=1) + torch.abs(base_ang_vel[zero_command_mask, 2])
+    no_movement_penalty = torch.exp(-no_movement_penalty_weight * no_movement_penalty)
+
+    # Total reward
+    total_reward = vel_tracking_reward + smooth_swings_reward + energy_efficiency_reward + low_impact_reward + stability_reward + no_movement_penalty
+
+    # Reward dictionary
     reward_dict = {
         "vel_tracking_reward": vel_tracking_reward,
         "smooth_swings_reward": smooth_swings_reward,
         "energy_efficiency_reward": energy_efficiency_reward,
-        "contact_impact_reward": contact_impact_reward,
+        "low_impact_reward": low_impact_reward,
         "stability_reward": stability_reward,
         "no_movement_penalty": no_movement_penalty
     }
-    
+
     return total_reward, reward_dict

@@ -85,11 +85,11 @@ env:
   numObservations: 235
   randomCommandVelocityRanges:
     linear_x:
-    - -1.0
-    - 1.0
+    - -0.6
+    - 0.6
     linear_y:
-    - -1.0
-    - 1.0
+    - -0.6
+    - 0.6
     yaw:
     - -3.14
     - 3.14

@@ -522,7 +522,7 @@ class AnymalDClimbUp(VecTask):
         # compute observations, rewards, resets, ...
         self.check_termination()
         self.compute_reward()
-        self.compute_gait_metrics()
+        # self.compute_gait_metrics()
         env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
         if len(env_ids) > 0:
             self.reset_idx(env_ids)

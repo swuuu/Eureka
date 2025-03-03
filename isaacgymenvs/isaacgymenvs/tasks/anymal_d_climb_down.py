@@ -1,3 +1,30 @@
+# Copyright (c) 2018-2023, NVIDIA Corporation
+# All rights reserved.
+#
+# Redistribution and use in source and binary forms, with or without
+# modification, are permitted provided that the following conditions are met:
+#
+# 1. Redistributions of source code must retain the above copyright notice, this
+#    list of conditions and the following disclaimer.
+#
+# 2. Redistributions in binary form must reproduce the above copyright notice,
+#    this list of conditions and the following disclaimer in the documentation
+#    and/or other materials provided with the distribution.
+#
+# 3. Neither the name of the copyright holder nor the names of its
+#    contributors may be used to endorse or promote products derived from
+#    this software without specific prior written permission.
+#
+# THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
+# AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
+# IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE
+# DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE LIABLE
+# FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR CONSEQUENTIAL
+# DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR
+# SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER
+# CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY,
+# OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+# OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 import numpy as np
 import os, time
@@ -13,7 +40,7 @@ from typing import Tuple, Dict
 from isaacgymenvs.tasks.base.vec_task import VecTask
 from .utils.terrains_for_policy_per_gait import TerrainsForPolicyPerGait as Terrain
 
-class AnymalDClimbUpGPT(VecTask):
+class AnymalDClimbDown(VecTask):
 
     def __init__(self, cfg, rl_device, sim_device, graphics_device_id, headless, virtual_screen_capture, force_render):
 
@@ -23,6 +50,7 @@ class AnymalDClimbUpGPT(VecTask):
         self.debug_viz = self.cfg["env"]["enableDebugVis"]
         self.init_done = False
 
+        # normalization
         self.lin_vel_scale = self.cfg["env"]["learn"]["linearVelocityScale"]
         self.ang_vel_scale = self.cfg["env"]["learn"]["angularVelocityScale"]
         self.dof_pos_scale = self.cfg["env"]["learn"]["dofPositionScale"]
@@ -30,6 +58,7 @@ class AnymalDClimbUpGPT(VecTask):
         self.height_meas_scale = self.cfg["env"]["learn"]["heightMeasurementScale"]
         self.action_scale = self.cfg["env"]["control"]["actionScale"]
 
+        # reward scales
         self.rew_scales = {}
         self.rew_scales["termination"] = self.cfg["env"]["learn"]["terminalReward"] 
         self.rew_scales["lin_vel_xy"] = self.cfg["env"]["learn"]["linearVelocityXYRewardScale"] 
@@ -49,18 +78,22 @@ class AnymalDClimbUpGPT(VecTask):
         self.rew_scales["joint_vel"] = self.cfg["env"]["learn"]["jointVel"]
         self.rew_scales["stand_still"] = self.cfg["env"]["learn"]["standStill"]
 
+        #command ranges
         self.command_x_range = self.cfg["env"]["randomCommandVelocityRanges"]["linear_x"]
         self.command_y_range = self.cfg["env"]["randomCommandVelocityRanges"]["linear_y"]
         self.command_yaw_range = self.cfg["env"]["randomCommandVelocityRanges"]["yaw"]
 
+        # base init state
         pos = self.cfg["env"]["baseInitState"]["pos"]
         rot = self.cfg["env"]["baseInitState"]["rot"]
         v_lin = self.cfg["env"]["baseInitState"]["vLinear"]
         v_ang = self.cfg["env"]["baseInitState"]["vAngular"]
         self.base_init_state = pos + rot + v_lin + v_ang
 
+        # default joint positions
         self.named_default_joint_angles = self.cfg["env"]["defaultJointAngles"]
 
+        # other
         self.decimation = self.cfg["env"]["control"]["decimation"]
         self.dt = self.decimation * self.cfg["sim"]["dt"]
         self.max_episode_length_s = self.cfg["env"]["learn"]["episodeLength_s"] 
@@ -83,6 +116,7 @@ class AnymalDClimbUpGPT(VecTask):
             cam_target = gymapi.Vec3(lookat[0], lookat[1], lookat[2])
             self.gym.viewer_camera_look_at(self.viewer, None, cam_pos, cam_target)
 
+        # get gym GPU state tensors
         actor_root_state = self.gym.acquire_actor_root_state_tensor(self.sim)
         dof_state_tensor = self.gym.acquire_dof_state_tensor(self.sim)
         net_contact_forces = self.gym.acquire_net_contact_force_tensor(self.sim)
@@ -91,12 +125,14 @@ class AnymalDClimbUpGPT(VecTask):
         self.gym.refresh_actor_root_state_tensor(self.sim)
         self.gym.refresh_net_contact_force_tensor(self.sim)
 
+        # create some wrapper tensors for different slices
         self.root_states = gymtorch.wrap_tensor(actor_root_state)
         self.dof_state = gymtorch.wrap_tensor(dof_state_tensor)
         self.dof_pos = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 0]
         self.dof_vel = self.dof_state.view(self.num_envs, self.num_dof, 2)[..., 1]
         self.contact_forces = gymtorch.wrap_tensor(net_contact_forces).view(self.num_envs, -1, 3) # shape: num_envs, num_bodies, xyz axis
 
+        # initialize some data used later on
         self.common_step_counter = 0
         self.extras = {}
         self.noise_scale_vec = self._get_noise_scale_vec(self.cfg)
@@ -112,11 +148,13 @@ class AnymalDClimbUpGPT(VecTask):
 
         self.height_points = self.init_height_points()
         self.measured_heights = None
+        # joint positions offsets
         self.default_dof_pos = torch.zeros_like(self.dof_pos, dtype=torch.float, device=self.device, requires_grad=False)
         for i in range(self.num_actions):
             name = self.dof_names[i]
             angle = self.named_default_joint_angles[name]
             self.default_dof_pos[:, i] = angle
+        # reward episode sums
         torch_zeros = lambda : torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
         self.episode_sums = {"lin_vel_xy": torch_zeros(), "lin_vel_z": torch_zeros(), "ang_vel_z": torch_zeros(), "ang_vel_xy": torch_zeros(),
                              "orient": torch_zeros(), "torques": torch_zeros(), "joint_acc": torch_zeros(), "base_height": torch_zeros(),
@@ -216,6 +254,7 @@ class AnymalDClimbUpGPT(VecTask):
         self.num_dof = self.gym.get_asset_dof_count(anymal_asset)
         self.num_bodies = self.gym.get_asset_rigid_body_count(anymal_asset)
 
+        # prepare friction randomization
         rigid_shape_prop = self.gym.get_asset_rigid_shape_properties(anymal_asset)
         friction_range = self.cfg["env"]["learn"]["frictionRange"]
         num_buckets = 100
@@ -237,6 +276,7 @@ class AnymalDClimbUpGPT(VecTask):
 
         dof_props = self.gym.get_asset_dof_properties(anymal_asset)
 
+        # env origins
         self.env_origins = torch.zeros(self.num_envs, 3, device=self.device, requires_grad=False)
         if not self.curriculum: self.cfg["env"]["terrain"]["maxInitMapLevel"] = self.cfg["env"]["terrain"]["numLevels"] - 1
         self.terrain_levels = torch.randint(0, self.cfg["env"]["terrain"]["maxInitMapLevel"]+1, (self.num_envs,), device=self.device)
@@ -250,6 +290,7 @@ class AnymalDClimbUpGPT(VecTask):
         self.anymal_handles = []
         self.envs = []
         for i in range(self.num_envs):
+            # create env instance
             env_handle = self.gym.create_env(self.sim, env_lower, env_upper, num_per_row)
             if self.custom_origins:
                 self.env_origins[i] = self.terrain_origins[self.terrain_levels[i], self.terrain_types[i]]
@@ -295,35 +336,44 @@ class AnymalDClimbUpGPT(VecTask):
                                     ), dim=-1)
 
     def compute_reward(self):
-        self.rew_buf[:], self.rew_dict = compute_reward(self.base_lin_vel, self.base_ang_vel, self.commands, self.dof_vel, self.torques, self.contact_forces, self.actions, self.feet_indices)
-        self.extras['gpt_reward'] = self.rew_buf.mean()
-        for rew_state in self.rew_dict: self.extras[rew_state] = self.rew_dict[rew_state].mean()
+        # velocity tracking reward
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
         ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
         rew_lin_vel_xy = torch.exp(-lin_vel_error/0.25) * self.rew_scales["lin_vel_xy"]
         rew_ang_vel_z = torch.exp(-ang_vel_error/0.25) * self.rew_scales["ang_vel_z"]
 
+        # other base velocity penalties
         rew_lin_vel_z = torch.square(self.base_lin_vel[:, 2]) * self.rew_scales["lin_vel_z"]
         rew_ang_vel_xy = torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1) * self.rew_scales["ang_vel_xy"]
 
+        # orientation penalty
         rew_orient = torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1) * self.rew_scales["orient"]
 
+        # base height penalty
         rew_base_height = torch.square(self.root_states[:, 2] - 0.5) * self.rew_scales["base_height"] # TODO add target base height to cfg
 
+        # torque penalty
         rew_torque = torch.sum(torch.square(self.torques), dim=1) * self.rew_scales["torque"]
 
+        # joint vel penalty
         rew_dof_vel = torch.sum(torch.square(self.dof_vel), dim=1) * self.rew_scales["joint_vel"]
 
+        # joint acc penalty
         rew_joint_acc = torch.sum(torch.square(self.last_dof_vel - self.dof_vel) / self.dt, dim=1) * self.rew_scales["joint_acc"]
 
+        # collision penalty
         knee_contact = torch.norm(self.contact_forces[:, self.knee_indices, :], dim=2) > 1.
         rew_collision = torch.sum(knee_contact, dim=1) * self.rew_scales["collision"] # sum vs any ?
 
+        # stumbling penalty
         stumble = (torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) > 5.) * (torch.abs(self.contact_forces[:, self.feet_indices, 2]) < 1.)
         rew_stumble = torch.sum(stumble, dim=1) * self.rew_scales["stumble"]
 
+        # action rate penalty
         rew_action_rate = torch.sum(torch.square(self.last_actions - self.actions), dim=1) * self.rew_scales["action_rate"]
 
+        # air time reward
+        # contact = torch.norm(contact_forces[:, feet_indices, :], dim=2) > 1.
         contact = self.contact_forces[:, self.feet_indices, 2] > 1.
         first_contact = (self.feet_air_time > 0.) * contact
         self.feet_air_time += self.dt
@@ -331,19 +381,25 @@ class AnymalDClimbUpGPT(VecTask):
         rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
         self.feet_air_time *= ~contact
 
+        # stand still penalty penalize motion at zero commands)
         rew_stand_still = torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1) * self.rew_scales["stand_still"]
 
+        # penalize strong feet contact forces
         max_contact_force = 500
         rew_contact_forces = torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) - max_contact_force).clip(min=0.), dim=1) * self.rew_scales["feet_contact_forces"]
 
+        # cosmetic penalty for hip motion
         rew_hip = torch.sum(torch.abs(self.dof_pos[:, [0, 3, 6, 9]] - self.default_dof_pos[:, [0, 3, 6, 9]]), dim=1)* self.rew_scales["hip"]
 
+        # total reward
         self.rew_buf = rew_lin_vel_xy + rew_ang_vel_z + rew_lin_vel_z + rew_ang_vel_xy + rew_orient + rew_base_height +\
                     rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_airTime + rew_hip + rew_stumble + rew_dof_vel + rew_stand_still + rew_contact_forces
         self.rew_buf = torch.clip(self.rew_buf, min=0., max=None)
 
+        # add termination reward
         self.rew_buf += self.rew_scales["termination"] * self.reset_buf * ~self.timeout_buf
 
+        # log episode reward sums
         self.episode_sums["lin_vel_xy"] += rew_lin_vel_xy
         self.episode_sums["ang_vel_z"] += rew_ang_vel_z
         self.episode_sums["lin_vel_z"] += rew_lin_vel_z
@@ -361,6 +417,9 @@ class AnymalDClimbUpGPT(VecTask):
         self.episode_sums["contact_forces"] += rew_contact_forces
         self.episode_sums["hip"] += rew_hip
 
+        # for eureka.py
+        # consecutive_successes = -(lin_vel_error + ang_vel_error).mean()
+        # self.extras['consecutive_successes'] = consecutive_successes
 
     def reset_idx(self, env_ids):
         positions_offset = torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof), device=self.device)
@@ -375,6 +434,7 @@ class AnymalDClimbUpGPT(VecTask):
             self.update_terrain_level(env_ids)
             self.root_states[env_ids] = self.base_init_state
             self.root_states[env_ids, :3] += self.env_origins[env_ids]
+            # self.root_states[env_ids, :2] += torch_rand_float(-0.5, 0.5, (len(env_ids), 2), device=self.device)
         else:
             self.root_states[env_ids] = self.base_init_state
 
@@ -397,15 +457,18 @@ class AnymalDClimbUpGPT(VecTask):
         self.progress_buf[env_ids] = 0
         self.reset_buf[env_ids] = 1
 
+        # fill extras
         self.extras["episode"] = {}
         for key in self.episode_sums.keys():
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.
         self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
+        # self.extras["terrain_level"] = torch.mean(self.terrain_levels.float())
         self.extras['consecutive_successes'] = torch.mean(self.terrain_levels.float())
 
     def update_terrain_level(self, env_ids):
         if not self.init_done or not self.curriculum:
+            # don't change on initial reset
             return
         distance = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
         move_up = (distance > self.terrain.env_length / 2)
@@ -437,6 +500,7 @@ class AnymalDClimbUpGPT(VecTask):
             self.gym.refresh_dof_state_tensor(self.sim)
 
     def post_physics_step(self):
+        # self.gym.refresh_dof_state_tensor(self.sim) # done in step
         self.gym.refresh_actor_root_state_tensor(self.sim)
         self.gym.refresh_net_contact_force_tensor(self.sim)
 
@@ -446,6 +510,7 @@ class AnymalDClimbUpGPT(VecTask):
         if self.common_step_counter % self.push_interval == 0:
             self.push_robots()
 
+        # prepare quantities
         self.base_quat = self.root_states[:, 3:7]
         self.base_lin_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 7:10])
         self.base_ang_vel = quat_rotate_inverse(self.base_quat, self.root_states[:, 10:13])
@@ -454,6 +519,7 @@ class AnymalDClimbUpGPT(VecTask):
         heading = torch.atan2(forward[:, 1], forward[:, 0])
         self.commands[:, 2] = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
 
+        # compute observations, rewards, resets, ...
         self.check_termination()
         self.compute_reward()
         self.compute_gait_metrics()
@@ -469,6 +535,7 @@ class AnymalDClimbUpGPT(VecTask):
         self.last_dof_vel[:] = self.dof_vel[:]
 
         if self.viewer and self.enable_viewer_sync and self.debug_viz:
+            # draw height lines
             self.gym.clear_lines(self.viewer)
             self.gym.refresh_rigid_body_state_tensor(self.sim)
             sphere_geom = gymutil.WireframeSphereGeometry(0.02, 4, 4, None, color=(1, 1, 0))
@@ -484,6 +551,7 @@ class AnymalDClimbUpGPT(VecTask):
                     gymutil.draw_lines(sphere_geom, self.gym, self.viewer, self.envs[i], sphere_pose) 
 
     def init_height_points(self):
+        # 1mx1.6m rectangle (without center line)
         y = 0.1 * torch.tensor([-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5], device=self.device, requires_grad=False) # 10-50cm on each side
         x = 0.1 * torch.tensor([-8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8], device=self.device, requires_grad=False) # 20-80cm on each side
         grid_x, grid_y = torch.meshgrid(x, y)
@@ -520,44 +588,63 @@ class AnymalDClimbUpGPT(VecTask):
         return heights.view(self.num_envs, -1) * self.terrain.vertical_scale
     
     def compute_gait_metrics(self):
+        # Compute duty factor
         contact = self.contact_forces[:, self.feet_indices, 2] > 1.
+        # Detect first contact of a new stance phase (only if moving)
         is_moving = (torch.norm(self.commands[:, :2], dim=1) > 0.1).unsqueeze(1).expand(-1, 4)
         new_gait_cycle = contact & (~self.contact_prev) & is_moving
         self.contact_prev = contact.clone()  # Update previous frame contact state
 
+        # Accumulate stance & swing durations
         self.swing_duration += (self.dt * torch.logical_not(contact))
         self.stance_duration += (self.dt * contact)
 
+        # Compute duty factor at the end of a gait cycle
         self.duty_factor[new_gait_cycle] = self.stance_duration[new_gait_cycle] / \
             (self.stance_duration[new_gait_cycle] + self.swing_duration[new_gait_cycle] + 1e-8)
 
+        # Handle standing still case (reset durations)
         is_standing = torch.norm(self.commands[:, :2], dim=1) <= 0.1
         self.swing_duration[is_standing] = 0.
         self.stance_duration[is_standing] = 0.
 
+        # Compute mean duty factor (avoid NaN)
         mask = self.duty_factor > 0.
         if mask.sum() > 0:
             self.extras['duty_factor'] = self.duty_factor[mask].mean()
         else:
             self.extras['duty_factor'] = torch.tensor(0.0, device=self.device)
 
+        # Compute stride frequency
         self.stride_duration[new_gait_cycle] = self.stance_duration[new_gait_cycle] + self.swing_duration[new_gait_cycle]
         self.stride_frequency[new_gait_cycle] = 1.0 / (self.stride_duration[new_gait_cycle] + 1e-8)
 
+        # Prevent infinite accumulation in standing still cases
         self.stride_duration[is_standing] = 0.
         self.stride_frequency[is_standing] = 0.
 
+        # Compute mean stride frequency (avoid NaN)
         mask = self.stride_frequency > 0.
         if mask.sum() > 0:
             self.extras['stride_frequency'] = self.stride_frequency[mask].mean()
         else:
             self.extras['stride_frequency'] = torch.tensor(0.0, device=self.device)
 
+        # Resets on a new gait cycle
         self.swing_duration[new_gait_cycle] = 0.
         self.stance_duration[new_gait_cycle] = 0.
 
+        ## Debug
+        #print(f"Stance Duration: {self.stance_duration.mean().item():.3f}, Swing Duration: {self.swing_duration.mean().item():.3f}")
+        #print(f"Stride Duration: {self.stride_duration.mean().item():.3f}, Stride Frequency: {self.extras['stride_frequency'].item():.3f}")
+        #print(f"Duty Factor: {self.extras['duty_factor'].item():.3f}")
 
     def _is_robot_out_of_terrain_env(self):
+        """
+        get dimensions of the local env
+        figure out if the origin is at a corner of the env or at the center of the env
+        """
+        # curr_robot_x_local = self.root_states[:, 0] - self.env_origins[:, 0]
         env_bound_upper_x = self.env_origins[:, 0] + self.terrain.env_length * 0.5
         env_bound_lower_x = self.env_origins[:, 0] - self.terrain.env_length * 0.5
         env_bound_upper_y = self.env_origins[:, 1] + self.terrain.env_width * 0.5
@@ -583,61 +670,3 @@ def wrap_to_pi(angles):
     angles %= 2*np.pi
     angles -= 2*np.pi * (angles > np.pi)
     return angles
-
-from typing import Tuple, Dict
-import math
-import torch
-from torch import Tensor
-@torch.jit.script
-def compute_reward(
-    base_lin_vel: torch.Tensor,
-    base_ang_vel: torch.Tensor,
-    commands: torch.Tensor,
-    dof_vel: torch.Tensor,
-    torques: torch.Tensor,
-    contact_forces: torch.Tensor,
-    actions: torch.Tensor,
-    feet_indices: torch.Tensor
-) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-    # Define temperature parameters for transformations
-    vel_tracking_temp = 0.5
-    energy_efficiency_temp = 0.001
-    foot_impact_temp = 0.05
-    stability_temp = 0.05
-    stair_climbing_temp = 1.0
-
-    # Velocity tracking reward - encouraging tracking of x, y, yaw velocity commands
-    vel_tracking_error = torch.norm(base_lin_vel[:, :2] - commands[:, :2], dim=-1) + torch.abs(base_ang_vel[:, 2] - commands[:, 2])
-    vel_tracking_reward = 1.0 - torch.exp(-vel_tracking_error / vel_tracking_temp)
-    
-    # Energy efficiency reward - penalizing high energy consumption
-    energy_consumption = torch.sum(torques**2, dim=-1)
-    energy_efficiency_reward = 1.0 / (1.0 + energy_consumption / energy_efficiency_temp)
-    
-    # Foot impact reward - penalizing high impact foot contacts
-    contact_norm = torch.norm(contact_forces[:, feet_indices, :], dim=-1)
-    foot_impact_penalty = torch.mean(contact_norm, dim=-1)
-    foot_impact_reward = 1.0 / (1.0 + foot_impact_penalty / foot_impact_temp)
-    
-    # Stability reward - penalizing large angular velocities to maintain stability
-    stability_penalty = torch.norm(base_ang_vel, dim=-1)
-    stability_reward = 1.0 / (1.0 + stability_penalty / stability_temp)
-    
-    # Stair climbing reward - primary objective to climb stairs, scaled to prevent overshadowing
-    stair_climbing_reward = torch.exp(torch.clamp(base_lin_vel[:, 2], min=0.0) / stair_climbing_temp) / 1000.0
-
-    # Total reward calculation
-    total_reward = (vel_tracking_reward + energy_efficiency_reward +
-                    foot_impact_reward + stability_reward +
-                    stair_climbing_reward)
-
-    # Individual rewards into a dictionary for analysis
-    reward_dict = {
-        'vel_tracking_reward': vel_tracking_reward,
-        'energy_efficiency_reward': energy_efficiency_reward,
-        'foot_impact_reward': foot_impact_reward,
-        'stability_reward': stability_reward,
-        'stair_climbing_reward': stair_climbing_reward,
-    }
-
-    return total_reward, reward_dict

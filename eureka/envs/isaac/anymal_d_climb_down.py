@@ -13,7 +13,7 @@ from typing import Tuple, Dict
 from isaacgymenvs.tasks.base.vec_task import VecTask
 from .utils.terrains_for_policy_per_gait import TerrainsForPolicyPerGait as Terrain
 
-class AnymalDClimbUpGPT(VecTask):
+class AnymalDClimbDown(VecTask):
 
     def __init__(self, cfg, rl_device, sim_device, graphics_device_id, headless, virtual_screen_capture, force_render):
 
@@ -295,9 +295,6 @@ class AnymalDClimbUpGPT(VecTask):
                                     ), dim=-1)
 
     def compute_reward(self):
-        self.rew_buf[:], self.rew_dict = compute_reward(self.base_lin_vel, self.base_ang_vel, self.commands, self.dof_vel, self.torques, self.contact_forces, self.actions, self.feet_indices)
-        self.extras['gpt_reward'] = self.rew_buf.mean()
-        for rew_state in self.rew_dict: self.extras[rew_state] = self.rew_dict[rew_state].mean()
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
         ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
         rew_lin_vel_xy = torch.exp(-lin_vel_error/0.25) * self.rew_scales["lin_vel_xy"]
@@ -583,61 +580,3 @@ def wrap_to_pi(angles):
     angles %= 2*np.pi
     angles -= 2*np.pi * (angles > np.pi)
     return angles
-
-from typing import Tuple, Dict
-import math
-import torch
-from torch import Tensor
-@torch.jit.script
-def compute_reward(
-    base_lin_vel: torch.Tensor,
-    base_ang_vel: torch.Tensor,
-    commands: torch.Tensor,
-    dof_vel: torch.Tensor,
-    torques: torch.Tensor,
-    contact_forces: torch.Tensor,
-    actions: torch.Tensor,
-    feet_indices: torch.Tensor
-) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-    # Define temperature parameters for transformations
-    vel_tracking_temp = 0.5
-    energy_efficiency_temp = 0.001
-    foot_impact_temp = 0.05
-    stability_temp = 0.05
-    stair_climbing_temp = 1.0
-
-    # Velocity tracking reward - encouraging tracking of x, y, yaw velocity commands
-    vel_tracking_error = torch.norm(base_lin_vel[:, :2] - commands[:, :2], dim=-1) + torch.abs(base_ang_vel[:, 2] - commands[:, 2])
-    vel_tracking_reward = 1.0 - torch.exp(-vel_tracking_error / vel_tracking_temp)
-    
-    # Energy efficiency reward - penalizing high energy consumption
-    energy_consumption = torch.sum(torques**2, dim=-1)
-    energy_efficiency_reward = 1.0 / (1.0 + energy_consumption / energy_efficiency_temp)
-    
-    # Foot impact reward - penalizing high impact foot contacts
-    contact_norm = torch.norm(contact_forces[:, feet_indices, :], dim=-1)
-    foot_impact_penalty = torch.mean(contact_norm, dim=-1)
-    foot_impact_reward = 1.0 / (1.0 + foot_impact_penalty / foot_impact_temp)
-    
-    # Stability reward - penalizing large angular velocities to maintain stability
-    stability_penalty = torch.norm(base_ang_vel, dim=-1)
-    stability_reward = 1.0 / (1.0 + stability_penalty / stability_temp)
-    
-    # Stair climbing reward - primary objective to climb stairs, scaled to prevent overshadowing
-    stair_climbing_reward = torch.exp(torch.clamp(base_lin_vel[:, 2], min=0.0) / stair_climbing_temp) / 1000.0
-
-    # Total reward calculation
-    total_reward = (vel_tracking_reward + energy_efficiency_reward +
-                    foot_impact_reward + stability_reward +
-                    stair_climbing_reward)
-
-    # Individual rewards into a dictionary for analysis
-    reward_dict = {
-        'vel_tracking_reward': vel_tracking_reward,
-        'energy_efficiency_reward': energy_efficiency_reward,
-        'foot_impact_reward': foot_impact_reward,
-        'stability_reward': stability_reward,
-        'stair_climbing_reward': stair_climbing_reward,
-    }
-
-    return total_reward, reward_dict

@@ -295,7 +295,7 @@ class AnymalDClimbUpGPT(VecTask):
                                     ), dim=-1)
 
     def compute_reward(self):
-        self.rew_buf[:], self.rew_dict = compute_reward(self.base_lin_vel, self.base_ang_vel, self.commands, self.dof_vel, self.torques, self.contact_forces, self.actions, self.feet_indices)
+        self.rew_buf[:], self.rew_dict = compute_reward(self.base_lin_vel, self.base_ang_vel, self.commands, self.torques, self.dof_vel, self.contact_forces, self.feet_indices)
         self.extras['gpt_reward'] = self.rew_buf.mean()
         for rew_state in self.rew_dict: self.extras[rew_state] = self.rew_dict[rew_state].mean()
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
@@ -593,51 +593,60 @@ def compute_reward(
     base_lin_vel: torch.Tensor,
     base_ang_vel: torch.Tensor,
     commands: torch.Tensor,
-    dof_vel: torch.Tensor,
     torques: torch.Tensor,
+    dof_vel: torch.Tensor,
     contact_forces: torch.Tensor,
-    actions: torch.Tensor,
-    feet_indices: torch.Tensor
+    feet_indices: torch.Tensor,
 ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
-    # Define temperature parameters for transformations
-    vel_tracking_temp = 0.5
-    energy_efficiency_temp = 0.001
-    foot_impact_temp = 0.05
-    stability_temp = 0.05
-    stair_climbing_temp = 1.0
+    # Adjusted velocity tracking reward scaling and temperature
+    vel_temp = 10.0
+    lin_vel_error = torch.norm(base_lin_vel[:, :2] - commands[:, :2], dim=-1)
+    ang_vel_error = torch.abs(base_ang_vel[:, 2] - commands[:, 2])
+    vel_tracking_reward = torch.exp(-vel_temp * (lin_vel_error + ang_vel_error))
 
-    # Velocity tracking reward - encouraging tracking of x, y, yaw velocity commands
-    vel_tracking_error = torch.norm(base_lin_vel[:, :2] - commands[:, :2], dim=-1) + torch.abs(base_ang_vel[:, 2] - commands[:, 2])
-    vel_tracking_reward = 1.0 - torch.exp(-vel_tracking_error / vel_tracking_temp)
-    
-    # Energy efficiency reward - penalizing high energy consumption
-    energy_consumption = torch.sum(torques**2, dim=-1)
-    energy_efficiency_reward = 1.0 / (1.0 + energy_consumption / energy_efficiency_temp)
-    
-    # Foot impact reward - penalizing high impact foot contacts
-    contact_norm = torch.norm(contact_forces[:, feet_indices, :], dim=-1)
-    foot_impact_penalty = torch.mean(contact_norm, dim=-1)
-    foot_impact_reward = 1.0 / (1.0 + foot_impact_penalty / foot_impact_temp)
-    
-    # Stability reward - penalizing large angular velocities to maintain stability
-    stability_penalty = torch.norm(base_ang_vel, dim=-1)
-    stability_reward = 1.0 / (1.0 + stability_penalty / stability_temp)
-    
-    # Stair climbing reward - primary objective to climb stairs, scaled to prevent overshadowing
-    stair_climbing_reward = torch.exp(torch.clamp(base_lin_vel[:, 2], min=0.0) / stair_climbing_temp) / 1000.0
+    # Slightly improve contact reward scaling
+    contact_temp = 2.0
+    foot_contact = (contact_forces[:, feet_indices, 2] > 1.0).float()
+    contact_reward = (foot_contact.sum(dim=-1) / foot_contact.size(1)) - 0.5
+    adjusted_contact_reward = torch.exp(contact_temp * contact_reward)
 
-    # Total reward calculation
-    total_reward = (vel_tracking_reward + energy_efficiency_reward +
-                    foot_impact_reward + stability_reward +
-                    stair_climbing_reward)
+    # Improved energy penalty sensitivity
+    energy_temp = 0.1
+    energy_consumption = (torques * torques).sum(dim=-1)
+    energy_penalty = torch.exp(-energy_temp * energy_consumption)
 
-    # Individual rewards into a dictionary for analysis
+    # Rewrite stride penalty for better feedback
+    stride_temp = 2.0
+    stride_error = (dof_vel - 1.0).abs().mean(dim=-1)
+    stride_penalty = torch.exp(-stride_temp * stride_error)
+
+    # Target duty factor and stride frequency for realistic gait
+    duty_target = 0.6  # Encourage >0.5
+    stride_freq_target = 1.2  # Between 1-1.5 Hz
+    duty_factor = foot_contact.mean(dim=-1)
+    stride_frequency = dof_vel.abs().mean(dim=-1) / 4.0  # Approximation for stride frequency
+
+    duty_factor_penalty = torch.exp(-3.0 * torch.abs(duty_factor - duty_target))
+    stride_frequency_penalty = torch.exp(-3.0 * torch.abs(stride_frequency - stride_freq_target))
+
+    # Total reward with rescaled rewards and penalties
+    total_reward = (
+        1.5 * vel_tracking_reward
+        + 1.0 * adjusted_contact_reward
+        + 1.0 * energy_penalty
+        - 0.5 * stride_penalty
+        + 0.5 * duty_factor_penalty
+        + 0.7 * stride_frequency_penalty
+    )
+
+    # Compile individual components
     reward_dict = {
         'vel_tracking_reward': vel_tracking_reward,
-        'energy_efficiency_reward': energy_efficiency_reward,
-        'foot_impact_reward': foot_impact_reward,
-        'stability_reward': stability_reward,
-        'stair_climbing_reward': stair_climbing_reward,
+        'contact_reward': adjusted_contact_reward,
+        'energy_penalty': energy_penalty,
+        'stride_penalty': stride_penalty,
+        'duty_factor_penalty': duty_factor_penalty,
+        'stride_frequency_penalty': stride_frequency_penalty
     }
-
+    
     return total_reward, reward_dict

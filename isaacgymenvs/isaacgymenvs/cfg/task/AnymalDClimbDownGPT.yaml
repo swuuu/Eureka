@@ -40,7 +40,7 @@ env:
   enableCameraSensors: false
   enableDebugVis: false
   envSpacing: 3.0
-  env_name: anymal_d_climb_upGPT
+  env_name: anymal_d_climb_downGPT
   learn:
     actionRateRewardScale: -0.01
     addNoise: true
@@ -105,25 +105,25 @@ env:
     slopeTreshold: 0.5
     staticFriction: 1.0
     terrainColTypes:
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
+    - pyramid_stairs_down
+    - pyramid_stairs_down
+    - pyramid_stairs_down
+    - pyramid_stairs_down
+    - pyramid_stairs_down
+    - pyramid_stairs_down
+    - pyramid_stairs_down
+    - pyramid_stairs_down
     - discrete
     - flat
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
+    - pyramid_stairs_down
+    - pyramid_stairs_down
+    - pyramid_stairs_down
+    - pyramid_stairs_down
+    - pyramid_stairs_down
+    - pyramid_stairs_down
+    - pyramid_stairs_down
+    - pyramid_stairs_down
+    - pyramid_stairs_down
     - discrete
     terrainType: trimesh
   urdfAsset:
@@ -143,7 +143,7 @@ env:
     - 0
     - 10
     refEnv: 0
-name: AnymalDClimbUpGPT
+name: AnymalDClimbDownGPT
 physics_engine: physx
 sim:
   dt: 0.005

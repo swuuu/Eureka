@@ -118,13 +118,17 @@ class Runner:
             flattened_outputs = traced(*adapter.flattened_inputs)
             print(flattened_outputs)
         
-        torch.onnx.export(traced, 
-                          *adapter.flattened_inputs, 
-                          f"{player.config['name']}.onnx", 
-                          verbose=True, 
-                          input_names=['obs'], 
-                          output_names=['logits', 'value'])
+        torch.onnx.export(
+            traced, 
+            *adapter.flattened_inputs, 
+            f"{player.config['name']}.onnx", 
+            verbose=True, 
+            input_names=['obs'], 
+            output_names=['logits', 'value'],
+            dynamic_axes={'obs': {0: 'batch_size'}, 'logits': {0: 'batch_size'}, 'value': {0: 'batch_size'}}
+        )
         print(f'Exported model to {player.config["name"]}.onnx!')
+
 
         player.run()
 

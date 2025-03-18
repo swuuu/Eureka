@@ -106,6 +106,7 @@ class Runner:
         _restore(player, args)
         _override_sigma(player, args)
 
+        # export as ONNX model
         import rl_games.algos_torch.flatten as flatten
         inputs = {
             'obs' : torch.zeros((1,) + player.obs_shape).to(player.device),
@@ -118,16 +119,38 @@ class Runner:
             flattened_outputs = traced(*adapter.flattened_inputs)
             print(flattened_outputs)
         
+        # Move inputs to GPU before tracing
+        gpu_inputs = [x.cuda() for x in adapter.flattened_inputs]
+
         torch.onnx.export(
             traced, 
-            *adapter.flattened_inputs, 
+            *gpu_inputs,  # Ensure GPU tensors are passed
             f"{player.config['name']}.onnx", 
             verbose=True, 
             input_names=['obs'], 
             output_names=['logits', 'value'],
             dynamic_axes={'obs': {0: 'batch_size'}, 'logits': {0: 'batch_size'}, 'value': {0: 'batch_size'}}
         )
+
         print(f'Exported model to {player.config["name"]}.onnx!')
+
+        # export as torchscript model
+        # Create model inputs
+        inputs = {
+            'obs': torch.zeros((1,) + player.obs_shape, device=player.device),
+            'rnn_states': player.states,  # Ensure this is on the correct device
+        }
+
+        with torch.no_grad():
+            adapter = flatten.TracingAdapter(ModelWrapper(player.model), inputs, allow_non_tensor=True)
+            
+            # Trace the model using TorchScript
+            traced = torch.jit.trace(adapter, adapter.flattened_inputs, check_trace=False)
+
+            # Save the TorchScript model instead of ONNX
+            traced.save(f"{player.config['name']}.pt")
+
+        print(f'Exported model to {player.config["name"]}.pt!')
 
 
         player.run()

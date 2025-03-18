@@ -18,8 +18,8 @@ env:
     # rough terrain only:
     curriculum: true
     maxInitMapLevel: 0
-    mapLength: 8.
-    mapWidth: 8.
+    mapLength: 15 # 8.
+    mapWidth: 15 # 8.
     numLevels: 10
     numTerrains: 20
     terrainColTypes: ["pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","discrete","flat", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "discrete"]
@@ -120,7 +120,7 @@ env:
     pushInterval_s: 15
 
     # episode length in seconds
-    episodeLength_s: 20
+    episodeLength_s: 30 # 20
 
   # viewer cam:
   viewer:

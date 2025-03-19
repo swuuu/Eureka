@@ -61,8 +61,10 @@ def main(cfg):
     code_output_tip = file_to_string(f'{prompt_dir}/code_output_tip.txt')
     if task == "AnymalDWalk":
         code_feedback = file_to_string(f'{prompt_dir}/code_feedback_anymal.txt')
-    elif task == "AnymalDClimbUp" or task == "AnymalDClimbDown":
-        code_feedback = file_to_string(f'{prompt_dir}/code_feedback_anymal_stairs.txt')
+    elif task == "AnymalDClimbUp": 
+        code_feedback = file_to_string(f'{prompt_dir}/code_feedback_anymal_stairs_up.txt')
+    elif task == "AnymalDClimbDown":
+        code_feedback = file_to_string(f'{prompt_dir}/code_feedback_anymal_stairs_down.txt')
     else:
         code_feedback = file_to_string(f'{prompt_dir}/code_feedback.txt')
     initial_user = file_to_string(f'{prompt_dir}/initial_user.txt')

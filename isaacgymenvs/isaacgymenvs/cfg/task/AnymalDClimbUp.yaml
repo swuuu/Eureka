@@ -20,7 +20,7 @@ env:
     maxInitMapLevel: 0
     mapLength: 15 # 8.
     mapWidth: 15 # 8.
-    numLevels: 10
+    numLevels: 12 # 10
     numTerrains: 20
     terrainColTypes: ["pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","discrete","flat", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "discrete"]
     # terrainProportions: [0.1, 0.1, 0.35, 0.25, 0.2]

@@ -1,27 +1,12 @@
-# description: The primary goal of the policy is to enable the quadruped robot to accurately track randomly chosen x, y, and yaw velocity commands while climbing up increasingly harder stairs. Ascending stairs is the ONLY terrain the robot will face.
-#   In addition to precise velocity tracking, the policy should optimize several secondary objectives crucial for real-world deployment, such as
-#   - Smooth and controlled footstep swings that are biomechanically reasonable.
-#   - Energy efficiency to extend runtime.
-#   - Low-impact foot contacts to minimize stress on the robot's structure.
-#   - Stability against small external disturbances to enhance robustness.
-#   - No movements for 0 velocity commands.
-#   While these secondary objectives may sometimes conflict, the policy should strike a balance to ensure safe, efficient, and reliable locomotion to ascend stairs on real hardware. Note that ascending stairs of increasing step heights
-#   is a challenging task itself, so please consider optimizing stair climbing as the primary objective.
-#   Some additional tips when designing a reward function are
-#   - To determine if a foot is in contact with the ground, compute self.contact_forces[:, self.feet_indices, 2] > 1.
-#   - To determine feet contact forces, compute torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1)
-#   - To determine energy consumption, compute self.torques dot product with self.dof_vel or self.torques*self.torques,
-#   The shape of self.contact_forces is (num_envs, 4, 3). 4 for 4 feet and 3 for XYZ axis.
-#   Since we did not define any states like self.foot_contacts, self.measured_forces, self.foot_contact_forces, or self.energy_consumption
-description: "The primary goal is to train a quadruped robot to climb the tallest possible step heights while maintaining stability. Reward functions should prioritize successful traversal of increasingly difficult terrain over simple motion efficiency. Some suggestions are
-  - Climbing-Specific Rewards Include components that encourage high foot lift, vertical force application, and stable foot placement. Avoid rewards that overly penalize power usage, as climbing requires forceful movements. A tip is reward feet air time.
-  - Energy Penalties Should Be Adaptive: If reducing power usage limits stair-climbing ability, deprioritize energy constraints.
-  - Biomechanical Gait Constraints: Encourage a stable duty factor and stride frequency where necessary, but do not force these constraints if they hurt climbing performance. Prioritize successful stair traversal first.
-  Some additional tips when designing a reward function are
+description: "The task is to have a quadruped robot track a command velocity when climbing increasingly taller step heights. The task score is from 0 to 1, with 1 being that all robots in the simulation can climb up stairs beyond a certain step height. 
+  Some tips when designing a reward function are:
+  - The reward function can be decomposed into several reward terms. The primary term should be command velocity tracking. Secondary terms CAN (not SHOULD) be to reward feet air contact, penalize energy consumption, penalize motions when standing still, penalize huge foot contacts, penalize collisions, reward stability, etc... Be careful with optimizing the secondary terms, as they can harm task performance.
+  - Rewarding feet air contacts can potentially help the robot reproduce higher and longer foot strides.
+  - Encourage a stable duty factor and stride frequency only when the main task is good enough (ideally > 0.75). 
   - To determine if a foot is in contact with the ground, compute self.contact_forces[:, self.feet_indices, 2] > 1.
   - To determine feet contact forces, compute torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1)
   - To determine energy consumption, compute self.torques dot product with self.dof_vel or self.torques*self.torques,
   The shape of self.contact_forces is (num_envs, 4, 3). 4 for 4 feet and 3 for XYZ axis (since we did not define any states like self.foot_contacts, self.measured_forces, self.foot_contact_forces, or self.energy_consumption)"
 task: AnymalDClimbUp
 env_name: anymal_d_climb_up
-max_iterations: 1500
+max_iterations: 1200

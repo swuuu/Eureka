@@ -13,6 +13,7 @@ from typing import Tuple, Dict
 from isaacgymenvs.tasks.base.vec_task import VecTask
 from .utils.terrains_for_policy_per_gait import TerrainsForPolicyPerGait as Terrain
 
+TERRAIN_LEVEL_SUCCESS_THRESHOLD = 9
 class AnymalDClimbUp(VecTask):
 
     def __init__(self, cfg, rl_device, sim_device, graphics_device_id, headless, virtual_screen_capture, force_render):
@@ -40,7 +41,7 @@ class AnymalDClimbUp(VecTask):
         self.rew_scales["torque"] = self.cfg["env"]["learn"]["torqueRewardScale"]
         self.rew_scales["joint_acc"] = self.cfg["env"]["learn"]["jointAccRewardScale"]
         self.rew_scales["base_height"] = self.cfg["env"]["learn"]["baseHeightRewardScale"]
-        self.rew_scales["air_time"] = self.cfg["env"]["learn"]["feetAirTimeRewardScale"]
+        self.rew_scales["feet_air_time"] = self.cfg["env"]["learn"]["feetAirTimeRewardScale"]
         self.rew_scales["collision"] = self.cfg["env"]["learn"]["kneeCollisionRewardScale"]
         self.rew_scales["stumble"] = self.cfg["env"]["learn"]["feetStumbleRewardScale"]
         self.rew_scales["action_rate"] = self.cfg["env"]["learn"]["actionRateRewardScale"]
@@ -120,7 +121,7 @@ class AnymalDClimbUp(VecTask):
         torch_zeros = lambda : torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
         self.episode_sums = {"lin_vel_xy": torch_zeros(), "lin_vel_z": torch_zeros(), "ang_vel_z": torch_zeros(), "ang_vel_xy": torch_zeros(),
                              "orient": torch_zeros(), "torques": torch_zeros(), "joint_acc": torch_zeros(), "base_height": torch_zeros(),
-                             "air_time": torch_zeros(), "collision": torch_zeros(), "stumble": torch_zeros(), "action_rate": torch_zeros(), "hip": torch_zeros(),
+                             "feet_air_time": torch_zeros(), "collision": torch_zeros(), "stumble": torch_zeros(), "action_rate": torch_zeros(), "hip": torch_zeros(),
                              "dof_vel": torch_zeros(), "stand_still": torch_zeros(), "contact_forces": torch_zeros()}
 
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
@@ -324,8 +325,8 @@ class AnymalDClimbUp(VecTask):
         contact = self.contact_forces[:, self.feet_indices, 2] > 1.
         first_contact = (self.feet_air_time > 0.) * contact
         self.feet_air_time += self.dt
-        rew_airTime = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) * self.rew_scales["air_time"] # reward only on first contact with the ground
-        rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
+        rew_feet_air_time = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) * self.rew_scales["feet_air_time"] # reward only on first contact with the ground
+        rew_feet_air_time *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
         self.feet_air_time *= ~contact
 
         rew_stand_still = torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1) * self.rew_scales["stand_still"]
@@ -336,7 +337,7 @@ class AnymalDClimbUp(VecTask):
         rew_hip = torch.sum(torch.abs(self.dof_pos[:, [0, 3, 6, 9]] - self.default_dof_pos[:, [0, 3, 6, 9]]), dim=1)* self.rew_scales["hip"]
 
         self.rew_buf = rew_lin_vel_xy + rew_ang_vel_z + rew_lin_vel_z + rew_ang_vel_xy + rew_orient + rew_base_height +\
-                    rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_airTime + rew_hip + rew_stumble + rew_dof_vel + rew_stand_still + rew_contact_forces
+                    rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_feet_air_time + rew_hip + rew_stumble + rew_dof_vel + rew_stand_still + rew_contact_forces
         self.rew_buf = torch.clip(self.rew_buf, min=0., max=None)
 
         self.rew_buf += self.rew_scales["termination"] * self.reset_buf * ~self.timeout_buf
@@ -351,13 +352,17 @@ class AnymalDClimbUp(VecTask):
         self.episode_sums["collision"] += rew_collision
         self.episode_sums["stumble"] += rew_stumble
         self.episode_sums["action_rate"] += rew_action_rate
-        self.episode_sums["air_time"] += rew_airTime
+        self.episode_sums["feet_air_time"] += rew_feet_air_time
         self.episode_sums["base_height"] += rew_base_height
         self.episode_sums["dof_vel"] += rew_dof_vel
         self.episode_sums["stand_still"] += rew_stand_still
         self.episode_sums["contact_forces"] += rew_contact_forces
         self.episode_sums["hip"] += rew_hip
-
+    
+    def update_successes(self):     
+        success = torch.where(self.terrain_levels > TERRAIN_LEVEL_SUCCESS_THRESHOLD, torch.ones_like(self.terrain_levels), torch.zeros_like(self.terrain_levels)).to(dtype=torch.float)
+        end_of_episode_envs = self.progress_buf >= (self.max_episode_length - 1)
+        self.extras['consecutive_successes'] = torch.where(end_of_episode_envs, success, self.extras.get('consecutive_successes', torch.zeros_like(success, dtype=torch.float))).mean()
 
     def reset_idx(self, env_ids):
         positions_offset = torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof), device=self.device)
@@ -399,7 +404,6 @@ class AnymalDClimbUp(VecTask):
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.
         self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
-        self.extras['consecutive_successes'] = torch.mean(self.terrain_levels.float())
 
     def update_terrain_level(self, env_ids):
         if not self.init_done or not self.curriculum:
@@ -451,6 +455,7 @@ class AnymalDClimbUp(VecTask):
         heading = torch.atan2(forward[:, 1], forward[:, 0])
         self.commands[:, 2] = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
 
+        self.update_successes()
         self.check_termination()
         self.compute_reward()
         self.compute_gait_metrics()

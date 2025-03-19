@@ -49,11 +49,13 @@ class TerrainsForPolicyPerGait():
         max_height_rough = [0.0, 0.1] # [m]
         stair_width = [1.0, 0.4]
         # stair_height = [0.05, 0.20, 0.12, 0.25] # min - max single step, min - max multi step
-        stair_height = [0.05, 0.20, 0.05, 0.25]
+        stair_height = [0.05, 0.25]
         max_stair_height_scale = 0.2
         discrete_obstacles_height = [0.0, 0.1]
         space_before_stairs = 3.0
         amplitude = [0.05, 0.1]
+        constant_step_width = 0.31
+        use_fixed_step_width = True 
 
         # make the terrain
         terrain = terrain_utils.SubTerrain("terrain",
@@ -72,14 +74,21 @@ class TerrainsForPolicyPerGait():
             terrain_utils.pyramid_sloped_terrain(terrain, slope=slope, platform_size=platform_size)
             terrain_utils.random_uniform_terrain(terrain, min_height=-max_height, max_height=max_height, step=0.005, downsampled_scale=0.2)
         elif choice == "pyramid_stairs_down":
-            step_width = stair_width[0] + (stair_width[1] - stair_width[0]) * difficulty
-            step_height = stair_height[2] + (stair_height[3] - stair_height[2]) * difficulty
+            if not use_fixed_step_width:
+                step_width = stair_width[0] + (stair_width[1] - stair_width[0]) * difficulty
+            else:
+                step_width = constant_step_width
+            step_height = stair_height[0] + (stair_height[1] - stair_height[0]) * difficulty
             terrain_utils.pyramid_stairs_terrain(terrain, step_width=step_width, step_height=step_height, platform_size=platform_size)
         elif choice == "pyramid_stairs_up":
-            step_width = stair_width[0] + (stair_width[1] - stair_width[0]) * difficulty
-            step_height = stair_height[2] + (stair_height[3] - stair_height[2]) * difficulty
+            if not use_fixed_step_width:
+                step_width = stair_width[0] + (stair_width[1] - stair_width[0]) * difficulty
+            else:
+                step_width = constant_step_width
+            step_height = stair_height[0] + (stair_height[1] - stair_height[0]) * difficulty
             step_height *= -1
             terrain_utils.pyramid_stairs_terrain(terrain, step_width=step_width, step_height=step_height, platform_size=platform_size)
+            print(f'step_width: {step_width}, step_height: {step_height}')
         elif choice == "discrete":
             height = discrete_obstacles_height[0] + (discrete_obstacles_height[1] - discrete_obstacles_height[0]) * difficulty
             num_rectangles = 20

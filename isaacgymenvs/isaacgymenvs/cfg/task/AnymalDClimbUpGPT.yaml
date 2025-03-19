@@ -55,7 +55,7 @@ env:
     dofPositionScale: 1.0
     dofVelocityNoise: 1.5
     dofVelocityScale: 0.05
-    episodeLength_s: 20
+    episodeLength_s: 30
     feetAirTimeRewardScale: 1.0
     feetStumbleRewardScale: -0.0
     frictionRange:
@@ -96,8 +96,8 @@ env:
   terrain:
     curriculum: true
     dynamicFriction: 1.0
-    mapLength: 8.0
-    mapWidth: 8.0
+    mapLength: 15
+    mapWidth: 15
     maxInitMapLevel: 0
     numLevels: 10
     numTerrains: 20

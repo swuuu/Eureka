@@ -1,4 +1,7 @@
-Please carefully analyze the policy feedback and provide a new, improved reward function that can better solve the task. Some helpful tips for analyzing the policy feedback:
+Please carefully analyze the policy feedback and provide a new, improved reward function that can better solve the task. When designing a new reward function, consider what signals best indicate successful stair descending.
+- What factors help the robot maintain stability while descending increasing step heights?
+- What factors might indicate inefficient or unstable descending?
+Some helpful tips for analyzing the policy feedback:
     (1) The task-score represents the average terrain difficulty level that the robots have solved. An increasing difficulty primarily means larger step heights. The higher the better. If the task-score is always at 0, please re-write the reward function.
     (2) If the values for a certain reward component are near identical throughout, then this means RL is not able to optimize this component as it is written. You may consider
         (a) Changing its scale or the value of its temperature parameter

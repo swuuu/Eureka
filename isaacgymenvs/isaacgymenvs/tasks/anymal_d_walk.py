@@ -545,6 +545,10 @@ class AnymalDWalk(VecTask):
         heading = torch.atan2(forward[:, 1], forward[:, 0])
         self.commands[:, 2] = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
 
+        # to inform eureka about movements at 0 velocity
+        zero_command_movements = torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+        self.extras["movements_at_0_velocity"] = torch.mean(zero_command_movements)
+
         # compute observations, rewards, resets, ...
         self.check_termination()
         self.compute_reward()

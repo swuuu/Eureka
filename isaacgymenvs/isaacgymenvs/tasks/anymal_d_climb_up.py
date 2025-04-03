@@ -40,7 +40,6 @@ from typing import Tuple, Dict
 from isaacgymenvs.tasks.base.vec_task import VecTask
 from .utils.terrains_for_policy_per_gait import TerrainsForPolicyPerGait as Terrain
 
-TERRAIN_LEVEL_SUCCESS_THRESHOLD = 9
 class AnymalDClimbUp(VecTask):
 
     def __init__(self, cfg, rl_device, sim_device, graphics_device_id, headless, virtual_screen_capture, force_render):

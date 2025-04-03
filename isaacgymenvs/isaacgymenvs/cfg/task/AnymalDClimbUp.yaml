@@ -18,12 +18,31 @@ env:
     # rough terrain only:
     curriculum: true
     maxInitMapLevel: 0
-    mapLength: 15 # 8.
-    mapWidth: 15 # 8.
-    numLevels: 12 # 10
+    mapLength: 17 # 8.
+    mapWidth: 17 # 8.
+    numLevels: 12
     numTerrains: 20
-    terrainColTypes: ["pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","pyramid_stairs_up","discrete","rough_pyramid_slope", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "pyramid_stairs_up", "rough_pyramid_slope", "discrete"]
-    # terrainProportions: [0.1, 0.1, 0.35, 0.25, 0.2]
+    terrainColTypes: 
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - rough_pyramid_slope
+    - discrete
+    - rough_pyramid_slope
+    - discrete
+    - pyramid_stairs_up_terrain_inner_square
+    - pyramid_stairs_up_terrain_inner_square
+    - pyramid_stairs_up_terrain_inner_square
+    - pyramid_stairs_up_terrain_inner_square
     # tri mesh only:
     slopeTreshold: 0.5
 
@@ -48,7 +67,7 @@ env:
     # decimation: Number of control action updates @ sim DT per policy DT
     decimation: 4
     useActuactorNetwork: True
-    actuatorNetFile: "actuator_nets/anydrive_v3_lstm.pt"
+    actuatorNetFile: "actuator_nets/anydrive_3_6_anymal_d.pt"
 
   defaultJointAngles:  # = target angles when action = 0.0
     LF_HAA: 0.03    # [rad]

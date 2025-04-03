@@ -13,6 +13,7 @@ from typing import Tuple, Dict
 from isaacgymenvs.tasks.base.vec_task import VecTask
 from .utils.terrains_for_policy_per_gait import TerrainsForPolicyPerGait as Terrain
 
+TERRAIN_LEVEL_SUCCESS_THRESHOLD = 9
 class AnymalDClimbUpGPT(VecTask):
 
     def __init__(self, cfg, rl_device, sim_device, graphics_device_id, headless, virtual_screen_capture, force_render):
@@ -40,7 +41,7 @@ class AnymalDClimbUpGPT(VecTask):
         self.rew_scales["torque"] = self.cfg["env"]["learn"]["torqueRewardScale"]
         self.rew_scales["joint_acc"] = self.cfg["env"]["learn"]["jointAccRewardScale"]
         self.rew_scales["base_height"] = self.cfg["env"]["learn"]["baseHeightRewardScale"]
-        self.rew_scales["air_time"] = self.cfg["env"]["learn"]["feetAirTimeRewardScale"]
+        self.rew_scales["feet_air_time"] = self.cfg["env"]["learn"]["feetAirTimeRewardScale"]
         self.rew_scales["collision"] = self.cfg["env"]["learn"]["kneeCollisionRewardScale"]
         self.rew_scales["stumble"] = self.cfg["env"]["learn"]["feetStumbleRewardScale"]
         self.rew_scales["action_rate"] = self.cfg["env"]["learn"]["actionRateRewardScale"]
@@ -120,7 +121,7 @@ class AnymalDClimbUpGPT(VecTask):
         torch_zeros = lambda : torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
         self.episode_sums = {"lin_vel_xy": torch_zeros(), "lin_vel_z": torch_zeros(), "ang_vel_z": torch_zeros(), "ang_vel_xy": torch_zeros(),
                              "orient": torch_zeros(), "torques": torch_zeros(), "joint_acc": torch_zeros(), "base_height": torch_zeros(),
-                             "air_time": torch_zeros(), "collision": torch_zeros(), "stumble": torch_zeros(), "action_rate": torch_zeros(), "hip": torch_zeros(),
+                             "feet_air_time": torch_zeros(), "collision": torch_zeros(), "stumble": torch_zeros(), "action_rate": torch_zeros(), "hip": torch_zeros(),
                              "dof_vel": torch_zeros(), "stand_still": torch_zeros(), "contact_forces": torch_zeros()}
 
         self.reset_idx(torch.arange(self.num_envs, device=self.device))
@@ -278,7 +279,6 @@ class AnymalDClimbUpGPT(VecTask):
             knee_contact = torch.norm(self.contact_forces[:, self.knee_indices, :], dim=2) > 1.
             self.reset_buf |= torch.any(knee_contact, dim=1)
         
-        self.reset_buf |= self._is_robot_out_of_terrain_env()
         self.reset_buf = torch.where(self.progress_buf >= self.max_episode_length - 1, torch.ones_like(self.reset_buf), self.reset_buf)
 
     def compute_observations(self):
@@ -295,7 +295,7 @@ class AnymalDClimbUpGPT(VecTask):
                                     ), dim=-1)
 
     def compute_reward(self):
-        self.rew_buf[:], self.rew_dict = compute_reward(self.root_states, self.base_lin_vel, self.base_ang_vel, self.dof_pos, self.dof_vel, self.contact_forces, self.torques, self.lin_vel_scale, self.ang_vel_scale, self.dof_pos_scale, self.dof_vel_scale, self.height_meas_scale)
+        self.rew_buf[:], self.rew_dict = compute_reward(self.base_lin_vel, self.base_ang_vel, self.commands, self.actions, self.dof_vel, self.last_dof_vel, self.contact_forces, self.feet_indices, self.dt, self.torques)
         self.extras['gpt_reward'] = self.rew_buf.mean()
         for rew_state in self.rew_dict: self.extras[rew_state] = self.rew_dict[rew_state].mean()
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
@@ -327,8 +327,8 @@ class AnymalDClimbUpGPT(VecTask):
         contact = self.contact_forces[:, self.feet_indices, 2] > 1.
         first_contact = (self.feet_air_time > 0.) * contact
         self.feet_air_time += self.dt
-        rew_airTime = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) * self.rew_scales["air_time"] # reward only on first contact with the ground
-        rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
+        rew_feet_air_time = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) * self.rew_scales["feet_air_time"] # reward only on first contact with the ground
+        rew_feet_air_time *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
         self.feet_air_time *= ~contact
 
         rew_stand_still = torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1) * self.rew_scales["stand_still"]
@@ -339,7 +339,7 @@ class AnymalDClimbUpGPT(VecTask):
         rew_hip = torch.sum(torch.abs(self.dof_pos[:, [0, 3, 6, 9]] - self.default_dof_pos[:, [0, 3, 6, 9]]), dim=1)* self.rew_scales["hip"]
 
         self.rew_buf = rew_lin_vel_xy + rew_ang_vel_z + rew_lin_vel_z + rew_ang_vel_xy + rew_orient + rew_base_height +\
-                    rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_airTime + rew_hip + rew_stumble + rew_dof_vel + rew_stand_still + rew_contact_forces
+                    rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_feet_air_time + rew_hip + rew_stumble + rew_dof_vel + rew_stand_still + rew_contact_forces
         self.rew_buf = torch.clip(self.rew_buf, min=0., max=None)
 
         self.rew_buf += self.rew_scales["termination"] * self.reset_buf * ~self.timeout_buf
@@ -354,13 +354,17 @@ class AnymalDClimbUpGPT(VecTask):
         self.episode_sums["collision"] += rew_collision
         self.episode_sums["stumble"] += rew_stumble
         self.episode_sums["action_rate"] += rew_action_rate
-        self.episode_sums["air_time"] += rew_airTime
+        self.episode_sums["feet_air_time"] += rew_feet_air_time
         self.episode_sums["base_height"] += rew_base_height
         self.episode_sums["dof_vel"] += rew_dof_vel
         self.episode_sums["stand_still"] += rew_stand_still
         self.episode_sums["contact_forces"] += rew_contact_forces
         self.episode_sums["hip"] += rew_hip
-
+    
+    def update_successes(self):     
+        success = torch.where(self.terrain_levels > TERRAIN_LEVEL_SUCCESS_THRESHOLD, torch.ones_like(self.terrain_levels), torch.zeros_like(self.terrain_levels)).to(dtype=torch.float)
+        end_of_episode_envs = self.progress_buf >= (self.max_episode_length - 1)
+        self.extras['consecutive_successes'] = torch.where(end_of_episode_envs, success, self.extras.get('consecutive_successes', torch.zeros_like(success, dtype=torch.float))).mean()
 
     def reset_idx(self, env_ids):
         positions_offset = torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof), device=self.device)
@@ -402,13 +406,12 @@ class AnymalDClimbUpGPT(VecTask):
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.
         self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
-        self.extras['consecutive_successes'] = torch.mean(self.terrain_levels.float())
 
     def update_terrain_level(self, env_ids):
         if not self.init_done or not self.curriculum:
             return
         distance = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
-        move_up = (distance > self.terrain.env_length / 3) # instead of /2
+        move_up = (distance > self.terrain.env_length / 2) # instead of /2
         self.terrain_levels[env_ids] += 1 * move_up
         self.terrain_levels[env_ids] -= 1 * (distance < torch.norm(self.commands[env_ids, :2])*self.max_episode_length_s*0.25) * ~move_up
         self.terrain_levels[env_ids] = torch.clip(self.terrain_levels[env_ids], 0) % self.terrain.env_rows
@@ -454,6 +457,7 @@ class AnymalDClimbUpGPT(VecTask):
         heading = torch.atan2(forward[:, 1], forward[:, 0])
         self.commands[:, 2] = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
 
+        self.update_successes()
         self.check_termination()
         self.compute_reward()
         self.compute_gait_metrics()
@@ -590,64 +594,71 @@ import torch
 from torch import Tensor
 @torch.jit.script
 def compute_reward(
-    root_states: torch.Tensor,
     base_lin_vel: torch.Tensor,
     base_ang_vel: torch.Tensor,
-    dof_pos: torch.Tensor,
+    commands: torch.Tensor,
+    actions: torch.Tensor,
     dof_vel: torch.Tensor,
+    last_dof_vel: torch.Tensor,
     contact_forces: torch.Tensor,
-    torques: torch.Tensor,
-    lin_vel_scale: float,
-    ang_vel_scale: float,
-    dof_pos_scale: float,
-    dof_vel_scale: float,
-    height_meas_scale: float
+    feet_indices: torch.Tensor,
+    dt: float,
+    torques: torch.Tensor
 ) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
     
-    # Parameters
-    foot_contact_threshold = 1.0  # Threshold to determine if a foot is in contact
-    foot_lift_temperature = 0.1   # Increased temperature for foot lift reward
-    stability_temperature = 0.5   # Temperature parameter for stability reward
-    duty_factor_temperature = 0.1 # Temperature parameter for duty factor reward
-    
-    # Climbing-Specific Rewards
-    # Encourage higher foot lift for better terrain traversal
-    foot_contact = (contact_forces[:, :, 2] > foot_contact_threshold).to(torch.float32)
-    foot_contact_forces = torch.norm(contact_forces, dim=-1)
-    foot_lift_reward = torch.exp(-foot_contact_forces.mean(dim=1) / foot_lift_temperature)
-    
-    # Vertical Force Application remains unchanged
-    vertical_force = contact_forces[:, :, 2].sum(dim=1)
-    vertical_force_reward = torch.clamp(vertical_force, min=0)
+    # Linear velocity tracking reward
+    lin_vel_error = torch.sum(torch.square(commands[:, :2] - base_lin_vel[:, :2]), dim=1)
+    lin_vel_tracking_temp = 0.5
+    lin_vel_tracking_reward = torch.exp(-lin_vel_error / lin_vel_tracking_temp)
 
-    # Stability Reward modified slightly for more impact
-    lin_vel_stability = torch.exp(-torch.std(base_lin_vel, dim=1) / stability_temperature)
-    ang_vel_stability = torch.exp(-torch.std(base_ang_vel, dim=1) / stability_temperature)
-    stability_reward = (lin_vel_stability + ang_vel_stability)
+    # Angular velocity tracking reward
+    ang_vel_error = torch.square(commands[:, 2] - base_ang_vel[:, 2])
+    ang_vel_tracking_temp = 0.5
+    ang_vel_tracking_reward = torch.exp(-ang_vel_error / ang_vel_tracking_temp)
+    
+    # Stability Reward
+    stability_temp = 0.1
+    std_base_ang_vel = torch.std(base_ang_vel, dim=1)
+    stability_reward = torch.exp(-std_base_ang_vel / stability_temp)
 
-    # Energy Usage Penalty (unmodified)
-    energy_penalty = (torques * dof_vel).sum(dim=1)  # Energy consumption
-    energy_penalty = torch.clamp(energy_penalty, max=5.0)
-    
-    # Duty Factor and Stride Frequency Rewards
-    duty_factor = 1 - foot_contact.mean(dim=1)  # Calculate duty factor
-    duty_factor_target = torch.full_like(duty_factor, 0.5)
-    duty_factor_reward = torch.exp(-torch.abs(duty_factor - duty_factor_target) / duty_factor_temperature)
-    
-    # Total Reward Calculation: A linear combination prioritizes climbing and gait
-    total_reward = (foot_lift_reward * 0.5 + 
-                    vertical_force_reward * 0.1 +
-                    stability_reward * 0.3 +
-                    duty_factor_reward * 0.1 -
-                    energy_penalty * 0.1)
-    
-    # Dictionary of rewards for diagnostics
+    # Energy consumption penalty for conserving energy
+    torque_penalty_temp = 0.00005
+    torque_penalty = torch.sum(torch.square(torques), dim=1) * -torque_penalty_temp
+
+    # Joint acceleration penalty (to limit rapid changes)
+    joint_accel_temp = 0.0001
+    joint_acceleration_penalty = torch.sum(torch.square(dof_vel - last_dof_vel) / dt, dim=1) * -joint_accel_temp
+
+    # Feet impact penalty: penalize high impact forces
+    impact_forces = torch.norm(contact_forces[:, feet_indices, :], dim=2)
+    impact_penalty_temp = 0.1
+    impact_penalty = torch.exp(-torch.mean(impact_forces, dim=1) / impact_penalty_temp)
+
+    # Feet air time reward: encourage longer air time
+    contact = (contact_forces[:, feet_indices, 2] > 0.5).float()
+    contact_duration = contact.sum(dim=1) * dt
+    feet_air_time_reward_temp = 0.1
+    feet_air_time_reward = torch.exp(-(contact_duration - 0.3) / feet_air_time_reward_temp)
+
+    # Total reward calculation
+    total_reward = (
+        lin_vel_tracking_reward * 0.3 +
+        ang_vel_tracking_reward * 0.3 +
+        stability_reward * 0.5 +
+        feet_air_time_reward * 1.5 +
+        torque_penalty * 1.0 +  # Increased penalty for energy consumption
+        joint_acceleration_penalty +
+        impact_penalty * -1.0  # Negative weight for penalizing hard impacts
+    )
+
     reward_components = {
-        'foot_lift_reward': foot_lift_reward,
-        'vertical_force_reward': vertical_force_reward,
-        'stability_reward': stability_reward,
-        'duty_factor_reward': duty_factor_reward,
-        'energy_penalty': energy_penalty
+        "lin_vel_tracking_reward": lin_vel_tracking_reward,
+        "ang_vel_tracking_reward": ang_vel_tracking_reward,
+        "stability_reward": stability_reward,
+        "feet_air_time_reward": feet_air_time_reward,
+        "torque_penalty": torque_penalty,
+        "joint_acceleration_penalty": joint_acceleration_penalty,
+        "impact_penalty": impact_penalty,
     }
-    
+
     return total_reward, reward_components

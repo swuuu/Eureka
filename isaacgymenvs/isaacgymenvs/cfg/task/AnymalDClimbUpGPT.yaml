@@ -96,10 +96,10 @@ env:
   terrain:
     curriculum: true
     dynamicFriction: 1.0
-    mapLength: 15
-    mapWidth: 15
+    mapLength: 17
+    mapWidth: 17
     maxInitMapLevel: 0
-    numLevels: 10
+    numLevels: 12
     numTerrains: 20
     restitution: 0.0
     slopeTreshold: 0.5
@@ -113,18 +113,18 @@ env:
     - pyramid_stairs_up
     - pyramid_stairs_up
     - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - pyramid_stairs_up
+    - rough_pyramid_slope
     - discrete
-    - flat
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - pyramid_stairs_up
-    - discrete
+    - pyramid_stairs_up_terrain_inner_square
+    - pyramid_stairs_up_terrain_inner_square
+    - pyramid_stairs_up_terrain_inner_square
+    - pyramid_stairs_up_terrain_inner_square
     terrainType: trimesh
   urdfAsset:
     collapseFixedJoints: true

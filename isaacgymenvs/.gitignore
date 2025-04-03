@@ -30,4 +30,5 @@ runs/
 .idea
 outputs/
 *.hydra*
+*.pt
 # /isaacgymenvs/wandb

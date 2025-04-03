@@ -279,7 +279,6 @@ class AnymalDClimbUp(VecTask):
             knee_contact = torch.norm(self.contact_forces[:, self.knee_indices, :], dim=2) > 1.
             self.reset_buf |= torch.any(knee_contact, dim=1)
         
-        self.reset_buf |= self._is_robot_out_of_terrain_env()
         self.reset_buf = torch.where(self.progress_buf >= self.max_episode_length - 1, torch.ones_like(self.reset_buf), self.reset_buf)
 
     def compute_observations(self):
@@ -409,7 +408,7 @@ class AnymalDClimbUp(VecTask):
         if not self.init_done or not self.curriculum:
             return
         distance = torch.norm(self.root_states[env_ids, :2] - self.env_origins[env_ids, :2], dim=1)
-        move_up = (distance > self.terrain.env_length / 3) # instead of /2
+        move_up = (distance > self.terrain.env_length / 2) # instead of /2
         self.terrain_levels[env_ids] += 1 * move_up
         self.terrain_levels[env_ids] -= 1 * (distance < torch.norm(self.commands[env_ids, :2])*self.max_episode_length_s*0.25) * ~move_up
         self.terrain_levels[env_ids] = torch.clip(self.terrain_levels[env_ids], 0) % self.terrain.env_rows

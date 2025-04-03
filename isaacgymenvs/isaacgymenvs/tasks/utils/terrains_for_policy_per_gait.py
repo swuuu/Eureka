@@ -99,8 +99,17 @@ class TerrainsForPolicyPerGait():
             num_waves = 5
             amplitude = amplitude[0] + (amplitude[1] - amplitude[0]) * difficulty
             terrain_utils.wave_terrain(terrain, num_waves=num_waves, amplitude=amplitude)
-        elif choice =="flat":
+        elif choice == "flat":
             pass
+        elif choice == "pyramid_stairs_up_terrain_inner_square":
+            pyramid_area_size = 7 # terrain.width * 0.25
+            if not use_fixed_step_width:
+                step_width = stair_width[0] + (stair_width[1] - stair_width[0]) * difficulty
+            else:
+                step_width = constant_step_width
+            step_height = stair_height[0] + (stair_height[1] - stair_height[0]) * difficulty
+            step_height *= -1
+            pyramid_stairs_terrain_inner_square(terrain, step_width=step_width, step_height=step_height, platform_size=platform_size, pyramid_area_size=pyramid_area_size)
         else:
             raise ValueError("Unknown terrain type: {}".format(choice))
         return terrain
@@ -123,3 +132,54 @@ class TerrainsForPolicyPerGait():
         y2 = int((self.env_width/2. + 1) / terrain.horizontal_scale)
         env_origin_z = np.max(terrain.height_field_raw[x1:x2, y1:y2])*terrain.vertical_scale
         self.env_origins[i, j] = [env_origin_x, env_origin_y, env_origin_z]
+
+def pyramid_stairs_terrain_inner_square(terrain, step_width, step_height, platform_size=1., pyramid_area_size=2.0):
+    """
+    Generate a pyramid stairs structure only in the center of the terrain.
+    
+    Parameters:
+        terrain (SubTerrain): the terrain object
+        step_width (float): the width of each stair step [meters]
+        step_height (float): the height of each stair step [meters]
+        platform_size (float): size of the flat platform at the center of the stairs [meters]
+        pyramid_area_size (float): size of the square area in which to apply the pyramid [meters]
+    Returns:
+        terrain (SubTerrain): updated terrain
+    """
+    # Convert real-world dimensions to grid units
+    step_width = int(step_width / terrain.horizontal_scale)
+    step_height = int(step_height / terrain.vertical_scale)
+    platform_size = int(platform_size / terrain.horizontal_scale)
+    pyramid_size = int(pyramid_area_size / terrain.horizontal_scale)
+
+    # Determine the bounds of the central square to apply the pyramid
+    center_x = terrain.width // 2
+    center_y = terrain.length // 2
+    half_size = pyramid_size // 2
+    start_x = center_x - half_size
+    stop_x = center_x + half_size
+    start_y = center_y - half_size
+    stop_y = center_y + half_size
+
+    # Clip to ensure the sub-region is within terrain bounds
+    start_x = max(start_x, 0)
+    stop_x = min(stop_x, terrain.width)
+    start_y = max(start_y, 0)
+    stop_y = min(stop_y, terrain.length)
+
+    # Create a copy of the bounds to shrink as we add stairs inward
+    cur_start_x = start_x
+    cur_stop_x = stop_x
+    cur_start_y = start_y
+    cur_stop_y = stop_y
+
+    height = 0
+    while (cur_stop_x - cur_start_x) > platform_size and (cur_stop_y - cur_start_y) > platform_size:
+        cur_start_x += step_width
+        cur_stop_x -= step_width
+        cur_start_y += step_width
+        cur_stop_y -= step_width
+        height += step_height
+        terrain.height_field_raw[cur_start_x:cur_stop_x, cur_start_y:cur_stop_y] = height
+
+    return terrain

@@ -161,8 +161,7 @@ class AnymalDWalk(VecTask):
                              "air_time": torch_zeros(), "collision": torch_zeros(), "stumble": torch_zeros(), "action_rate": torch_zeros(), "hip": torch_zeros(),
                              "dof_vel": torch_zeros(), "stand_still": torch_zeros(), "contact_forces": torch_zeros()}
 
-        self.reset_idx(torch.arange(self.num_envs, device=self.device))
-        
+        # gait characteristics
         self.swing_duration = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
         self.stance_duration = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
         self.duty_factor = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
@@ -171,16 +170,21 @@ class AnymalDWalk(VecTask):
         self.stride_frequency = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
         self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
 
-        self.init_done = True
-
         if cfg["env"]["control"]["useActuactorNetwork"]:
             asset_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../assets')
             asset_file = self.cfg["env"]["control"]["actuatorNetFile"]
             actuator_network_path = os.path.join(asset_root, asset_file)
             self.actuator_network = torch.jit.load(actuator_network_path).to(self.device)
-            self.sea_input = torch.zeros(self.num_envs*self.num_actions, 1, 2, device=self.device, requires_grad=False)
-            self.sea_hidden_state = torch.zeros(2, self.num_envs*self.num_actions, 8, device=self.device, requires_grad=False)
-            self.sea_cell_state = torch.zeros(2, self.num_envs*self.num_actions, 8, device=self.device, requires_grad=False)
+            # buffers for actuator network ANYmal D
+            self.des_joint_pos_error_hist = torch.zeros(3, self.num_envs*self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+            self.joint_vel_hist = torch.zeros(3, self.num_envs*self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+            self.time_elapsed_act_hist = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+            self.act_hist_update_rate = 0.01 # seconds
+            self.des_joint_pos_error_hist_per_env = self.des_joint_pos_error_hist.view(3, self.num_envs, self.num_actions)
+            self.joint_vel_hist_per_env = self.joint_vel_hist.view(3, self.num_envs, self.num_actions)
+        
+        self.reset_idx(torch.arange(self.num_envs, device=self.device))
+        self.init_done = True
 
     def create_sim(self):
         self.up_axis_idx = 2 # index of up axis: Y=1, Z=2
@@ -416,9 +420,9 @@ class AnymalDWalk(VecTask):
         self.episode_sums["contact_forces"] += rew_contact_forces
         self.episode_sums["hip"] += rew_hip
 
-        # for eureka.py
-        consecutive_successes = -(lin_vel_error + ang_vel_error).mean()
-        self.extras['consecutive_successes'] = consecutive_successes
+        # # for eureka.py
+        # consecutive_successes = -(lin_vel_error + ang_vel_error).mean()
+        # self.extras['consecutive_successes'] = consecutive_successes
 
     def reset_idx(self, env_ids):
         positions_offset = torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof), device=self.device)
@@ -462,7 +466,12 @@ class AnymalDWalk(VecTask):
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.
         self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
-        self.extras["terrain_level"] = torch.mean(self.terrain_levels.float())
+        # self.extras["terrain_level"] = torch.mean(self.terrain_levels.float())
+        self.extras['consecutive_successes'] = torch.mean(self.terrain_levels.float())
+
+        # reset buffers for actuator network
+        self.des_joint_pos_error_hist_per_env[:, env_ids] = 0.
+        self.joint_vel_hist_per_env[:, env_ids] = 0.
 
     def update_terrain_level(self, env_ids):
         if not self.init_done or not self.curriculum:
@@ -477,15 +486,35 @@ class AnymalDWalk(VecTask):
     def push_robots(self):
         self.root_states[:, 7:9] = torch_rand_float(-1., 1., (self.num_envs, 2), device=self.device) # lin vel x/y
         self.gym.set_actor_root_state_tensor(self.sim, gymtorch.unwrap_tensor(self.root_states))
+    
+    def update_command_history(self, actions):
+        if torch.all(self.des_joint_pos_error_hist == 0): # initialize at t=0
+            self.des_joint_pos_error_hist[:, :] = (actions * self.cfg["env"]["control"]["actionScale"] + self.default_dof_pos - self.dof_pos).flatten()
+            self.joint_vel_hist[:, :] = self.dof_vel.flatten() 
+        else: 
+            self.time_elapsed_act_hist += self.dt
+            envs_to_update_act_hist = (self.time_elapsed_act_hist > self.act_hist_update_rate).nonzero(as_tuple=False).flatten()
+            self.time_elapsed_act_hist[envs_to_update_act_hist] = 0.
+            # update history        
+            self.des_joint_pos_error_hist_per_env[:, envs_to_update_act_hist] = torch.roll(self.des_joint_pos_error_hist_per_env[:, envs_to_update_act_hist], shifts=1, dims=0)
+            self.des_joint_pos_error_hist_per_env[0, envs_to_update_act_hist] = (actions * self.cfg["env"]["control"]["actionScale"] + self.default_dof_pos - self.dof_pos)[envs_to_update_act_hist]
+            self.joint_vel_hist_per_env[:, envs_to_update_act_hist] = torch.roll(self.joint_vel_hist_per_env[:, envs_to_update_act_hist], shifts=1, dims=0)
+            self.joint_vel_hist_per_env[0, envs_to_update_act_hist] = self.dof_vel[envs_to_update_act_hist]
 
     def pre_physics_step(self, actions):
         self.actions = actions.clone().to(self.device)
         for i in range(self.decimation):
             if self.cfg["env"]["control"]["useActuactorNetwork"]:
                 with torch.inference_mode():
-                    self.sea_input[:, 0, 0] = (actions * self.cfg["env"]["control"]["actionScale"] + self.default_dof_pos - self.dof_pos).flatten()
-                    self.sea_input[:, 0, 1] = self.dof_vel.flatten()
-                    torques, (self.sea_hidden_state[:], self.sea_cell_state[:]) = self.actuator_network(self.sea_input, (self.sea_hidden_state, self.sea_cell_state))
+                    self.update_command_history(actions)
+                    actuator_input = torch.stack([self.joint_vel_hist[0],
+                                                self.joint_vel_hist[1],
+                                                self.joint_vel_hist[2], 
+                                                self.des_joint_pos_error_hist[0],
+                                                self.des_joint_pos_error_hist[1],
+                                                self.des_joint_pos_error_hist[2]],
+                                                dim=1)
+                    torques = self.actuator_network(actuator_input)
             else:
                 torques = torch.clip(self.Kp*(self.action_scale*self.actions + self.default_dof_pos - self.dof_pos) - self.Kd*self.dof_vel,
                                     -80., 80.)

@@ -339,86 +339,103 @@ class AnymalDClimbUp(VecTask):
                                     ), dim=-1)
 
     def compute_reward(self):
-        # velocity tracking reward
-        lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
-        ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
-        rew_lin_vel_xy = torch.exp(-lin_vel_error/0.25) * self.rew_scales["lin_vel_xy"]
-        rew_ang_vel_z = torch.exp(-ang_vel_error/0.25) * self.rew_scales["ang_vel_z"]
+        self.rew_buf[:], self.rew_dict = compute_anymal_reward(self.base_lin_vel, 
+                                                               self.base_ang_vel, 
+                                                               self.commands, 
+                                                               self.projected_gravity, 
+                                                               self.root_states, 
+                                                               self.torques, 
+                                                               self.dof_vel, 
+                                                               self.last_dof_vel, 
+                                                               self.contact_forces, 
+                                                               self.feet_indices, 
+                                                               self.knee_indices, 
+                                                               self.last_actions, 
+                                                               self.actions, 
+                                                               self.feet_air_time, 
+                                                               self.default_dof_pos, 
+                                                               self.dof_pos,
+                                                               self.dt)
+        # # velocity tracking reward
+        # lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
+        # ang_vel_error = torch.square(self.commands[:, 2] - self.base_ang_vel[:, 2])
+        # rew_lin_vel_xy = torch.exp(-lin_vel_error/0.25) * self.rew_scales["lin_vel_xy"]
+        # rew_ang_vel_z = torch.exp(-ang_vel_error/0.25) * self.rew_scales["ang_vel_z"]
 
-        # other base velocity penalties
-        rew_lin_vel_z = torch.square(self.base_lin_vel[:, 2]) * self.rew_scales["lin_vel_z"]
-        rew_ang_vel_xy = torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1) * self.rew_scales["ang_vel_xy"]
+        # # other base velocity penalties
+        # rew_lin_vel_z = torch.square(self.base_lin_vel[:, 2]) * self.rew_scales["lin_vel_z"]
+        # rew_ang_vel_xy = torch.sum(torch.square(self.base_ang_vel[:, :2]), dim=1) * self.rew_scales["ang_vel_xy"]
 
-        # orientation penalty
-        rew_orient = torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1) * self.rew_scales["orient"]
+        # # orientation penalty
+        # rew_orient = torch.sum(torch.square(self.projected_gravity[:, :2]), dim=1) * self.rew_scales["orient"]
 
-        # base height penalty
-        rew_base_height = torch.square(self.root_states[:, 2] - 0.5) * self.rew_scales["base_height"] # TODO add target base height to cfg
+        # # base height penalty
+        # rew_base_height = torch.square(self.root_states[:, 2] - 0.5) * self.rew_scales["base_height"] # TODO add target base height to cfg
 
-        # torque penalty
-        rew_torque = torch.sum(torch.square(self.torques), dim=1) * self.rew_scales["torque"]
+        # # torque penalty
+        # rew_torque = torch.sum(torch.square(self.torques), dim=1) * self.rew_scales["torque"]
 
-        # joint vel penalty
-        rew_dof_vel = torch.sum(torch.square(self.dof_vel), dim=1) * self.rew_scales["joint_vel"]
+        # # joint vel penalty
+        # rew_dof_vel = torch.sum(torch.square(self.dof_vel), dim=1) * self.rew_scales["joint_vel"]
 
-        # joint acc penalty
-        rew_joint_acc = torch.sum(torch.square(self.last_dof_vel - self.dof_vel) / self.dt, dim=1) * self.rew_scales["joint_acc"]
+        # # joint acc penalty
+        # rew_joint_acc = torch.sum(torch.square(self.last_dof_vel - self.dof_vel) / self.dt, dim=1) * self.rew_scales["joint_acc"]
 
-        # collision penalty
-        knee_contact = torch.norm(self.contact_forces[:, self.knee_indices, :], dim=2) > 1.
-        rew_collision = torch.sum(knee_contact, dim=1) * self.rew_scales["collision"] # sum vs any ?
+        # # collision penalty
+        # knee_contact = torch.norm(self.contact_forces[:, self.knee_indices, :], dim=2) > 1.
+        # rew_collision = torch.sum(knee_contact, dim=1) * self.rew_scales["collision"] # sum vs any ?
 
-        # stumbling penalty
-        stumble = (torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) > 5.) * (torch.abs(self.contact_forces[:, self.feet_indices, 2]) < 1.)
-        rew_stumble = torch.sum(stumble, dim=1) * self.rew_scales["stumble"]
+        # # stumbling penalty
+        # stumble = (torch.norm(self.contact_forces[:, self.feet_indices, :2], dim=2) > 5.) * (torch.abs(self.contact_forces[:, self.feet_indices, 2]) < 1.)
+        # rew_stumble = torch.sum(stumble, dim=1) * self.rew_scales["stumble"]
 
-        # action rate penalty
-        rew_action_rate = torch.sum(torch.square(self.last_actions - self.actions), dim=1) * self.rew_scales["action_rate"]
+        # # action rate penalty
+        # rew_action_rate = torch.sum(torch.square(self.last_actions - self.actions), dim=1) * self.rew_scales["action_rate"]
 
-        # air time reward
-        # contact = torch.norm(contact_forces[:, feet_indices, :], dim=2) > 1.
-        contact = self.contact_forces[:, self.feet_indices, 2] > 1.
-        first_contact = (self.feet_air_time > 0.) * contact
-        self.feet_air_time += self.dt
-        rew_feet_air_time = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) * self.rew_scales["feet_air_time"] # reward only on first contact with the ground
-        rew_feet_air_time *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
-        self.feet_air_time *= ~contact
+        # # air time reward
+        # # contact = torch.norm(contact_forces[:, feet_indices, :], dim=2) > 1.
+        # contact = self.contact_forces[:, self.feet_indices, 2] > 1.
+        # first_contact = (self.feet_air_time > 0.) * contact
+        # self.feet_air_time += self.dt
+        # rew_feet_air_time = torch.sum((self.feet_air_time - 0.5) * first_contact, dim=1) * self.rew_scales["feet_air_time"] # reward only on first contact with the ground
+        # rew_feet_air_time *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
+        # self.feet_air_time *= ~contact
 
-        # stand still penalty penalize motion at zero commands)
-        rew_stand_still = torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1) * self.rew_scales["stand_still"]
+        # # stand still penalty penalize motion at zero commands)
+        # rew_stand_still = torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1) * self.rew_scales["stand_still"]
 
-        # penalize strong feet contact forces
-        max_contact_force = 500
-        rew_contact_forces = torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) - max_contact_force).clip(min=0.), dim=1) * self.rew_scales["feet_contact_forces"]
+        # # penalize strong feet contact forces
+        # max_contact_force = 500
+        # rew_contact_forces = torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) - max_contact_force).clip(min=0.), dim=1) * self.rew_scales["feet_contact_forces"]
 
-        # cosmetic penalty for hip motion
-        rew_hip = torch.sum(torch.abs(self.dof_pos[:, [0, 3, 6, 9]] - self.default_dof_pos[:, [0, 3, 6, 9]]), dim=1)* self.rew_scales["hip"]
+        # # cosmetic penalty for hip motion
+        # rew_hip = torch.sum(torch.abs(self.dof_pos[:, [0, 3, 6, 9]] - self.default_dof_pos[:, [0, 3, 6, 9]]), dim=1)* self.rew_scales["hip"]
 
-        # total reward
-        self.rew_buf = rew_lin_vel_xy + rew_ang_vel_z + rew_lin_vel_z + rew_ang_vel_xy + rew_orient + rew_base_height +\
-                    rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_feet_air_time + rew_hip + rew_stumble + rew_dof_vel + rew_stand_still + rew_contact_forces
-        self.rew_buf = torch.clip(self.rew_buf, min=0., max=None)
+        # # total reward
+        # self.rew_buf = rew_lin_vel_xy + rew_ang_vel_z + rew_lin_vel_z + rew_ang_vel_xy + rew_orient + rew_base_height +\
+        #             rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_feet_air_time + rew_hip + rew_stumble + rew_dof_vel + rew_stand_still + rew_contact_forces
+        # self.rew_buf = torch.clip(self.rew_buf, min=0., max=None)
 
-        # add termination reward
-        self.rew_buf += self.rew_scales["termination"] * self.reset_buf * ~self.timeout_buf
+        # # add termination reward
+        # self.rew_buf += self.rew_scales["termination"] * self.reset_buf * ~self.timeout_buf
 
-        # log episode reward sums
-        self.episode_sums["lin_vel_xy"] += rew_lin_vel_xy
-        self.episode_sums["ang_vel_z"] += rew_ang_vel_z
-        self.episode_sums["lin_vel_z"] += rew_lin_vel_z
-        self.episode_sums["ang_vel_xy"] += rew_ang_vel_xy
-        self.episode_sums["orient"] += rew_orient
-        self.episode_sums["torques"] += rew_torque
-        self.episode_sums["joint_acc"] += rew_joint_acc
-        self.episode_sums["collision"] += rew_collision
-        self.episode_sums["stumble"] += rew_stumble
-        self.episode_sums["action_rate"] += rew_action_rate
-        self.episode_sums["feet_air_time"] += rew_feet_air_time
-        self.episode_sums["base_height"] += rew_base_height
-        self.episode_sums["dof_vel"] += rew_dof_vel
-        self.episode_sums["stand_still"] += rew_stand_still
-        self.episode_sums["contact_forces"] += rew_contact_forces
-        self.episode_sums["hip"] += rew_hip
+        # # log episode reward sums
+        # self.episode_sums["lin_vel_xy"] += rew_lin_vel_xy
+        # self.episode_sums["ang_vel_z"] += rew_ang_vel_z
+        # self.episode_sums["lin_vel_z"] += rew_lin_vel_z
+        # self.episode_sums["ang_vel_xy"] += rew_ang_vel_xy
+        # self.episode_sums["orient"] += rew_orient
+        # self.episode_sums["torques"] += rew_torque
+        # self.episode_sums["joint_acc"] += rew_joint_acc
+        # self.episode_sums["collision"] += rew_collision
+        # self.episode_sums["stumble"] += rew_stumble
+        # self.episode_sums["action_rate"] += rew_action_rate
+        # self.episode_sums["feet_air_time"] += rew_feet_air_time
+        # self.episode_sums["base_height"] += rew_base_height
+        # self.episode_sums["dof_vel"] += rew_dof_vel
+        # self.episode_sums["stand_still"] += rew_stand_still
+        # self.episode_sums["contact_forces"] += rew_contact_forces
+        # self.episode_sums["hip"] += rew_hip
     
     # def update_successes(self):     
     #     # for eureka.py   
@@ -495,7 +512,8 @@ class AnymalDClimbUp(VecTask):
             self.des_joint_pos_error_hist[:, :] = (actions * self.cfg["env"]["control"]["actionScale"] + self.default_dof_pos - self.dof_pos).flatten()
             self.joint_vel_hist[:, :] = self.dof_vel.flatten() 
         else: 
-            self.time_elapsed_act_hist += self.dt
+            # self.time_elapsed_act_hist += (self.dt / self.decimation)
+            self.time_elapsed_act_hist += (self.dt)
             envs_to_update_act_hist = (self.time_elapsed_act_hist > self.act_hist_update_rate).nonzero(as_tuple=False).flatten()
             self.time_elapsed_act_hist[envs_to_update_act_hist] = 0.
             # update history        
@@ -700,3 +718,86 @@ def wrap_to_pi(angles):
     angles %= 2*np.pi
     angles -= 2*np.pi * (angles > np.pi)
     return angles
+
+@torch.jit.script
+def compute_anymal_reward(
+    base_lin_vel: torch.Tensor,
+    base_ang_vel: torch.Tensor,
+    commands: torch.Tensor,
+    projected_gravity: torch.Tensor,
+    root_states: torch.Tensor,
+    torques: torch.Tensor,
+    dof_vel: torch.Tensor,
+    last_dof_vel: torch.Tensor,
+    contact_forces: torch.Tensor,
+    feet_indices: torch.Tensor,
+    knee_indices: torch.Tensor,
+    last_actions: torch.Tensor,
+    actions: torch.Tensor,
+    feet_air_time: torch.Tensor,
+    default_dof_pos: torch.Tensor,
+    dof_pos: torch.Tensor,
+    dt: float
+) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+
+    # Velocity tracking rewards (separate terms)
+    lin_vel_error = torch.sum(torch.square(commands[:, :2] - base_lin_vel[:, :2]), dim=1)
+    lin_vel_tracking_reward = torch.exp(-lin_vel_error / 0.25)
+
+    ang_vel_error = torch.square(commands[:, 2] - base_ang_vel[:, 2])
+    ang_vel_tracking_reward = torch.exp(-ang_vel_error / 0.25)
+
+    # Other velocity penalties
+    lin_vel_z_penalty = torch.square(base_lin_vel[:, 2])
+    ang_vel_xy_penalty = torch.sum(torch.square(base_ang_vel[:, :2]), dim=1)
+
+    # Orientation penalty
+    orientation_penalty = torch.sum(torch.square(projected_gravity[:, :2]), dim=1)
+
+    # Base height penalty
+    base_height_penalty = torch.square(root_states[:, 2] - 0.5)
+
+    # Energy-related penalties
+    torque_penalty = torch.sum(torch.square(torques), dim=1)
+    joint_acc_penalty = torch.sum(torch.square(last_dof_vel - dof_vel) / dt, dim=1)
+
+    # Collision and stumbling penalties
+    knee_contact = torch.norm(contact_forces[:, knee_indices, :], dim=2) > 1.0
+    collision_penalty = torch.sum(knee_contact, dim=1)
+
+    stumble = (torch.norm(contact_forces[:, feet_indices, :2], dim=2) > 5.) * (torch.abs(contact_forces[:, feet_indices, 2]) < 1.)
+    stumble_penalty = torch.sum(stumble, dim=1)
+
+    # Action rate penalty
+    action_rate_penalty = torch.sum(torch.square(last_actions - actions), dim=1)
+
+    # Feet air time reward
+    contact = contact_forces[:, feet_indices, 2] > 1.0
+    first_contact = (feet_air_time > 0.) * contact
+    feet_air_time_reward = torch.sum((feet_air_time - 0.5) * first_contact, dim=1)
+    feet_air_time_reward *= torch.norm(commands[:, :2], dim=1) > 0.1  # No reward for zero command
+    feet_air_time *= ~contact
+
+    # Balanced total reward composition
+    total_reward = (
+        lin_vel_tracking_reward * 1.0 +  # Prioritizing linear velocity tracking
+        ang_vel_tracking_reward * 0.5 +  # Less emphasis on angular tracking
+        feet_air_time_reward * 1.0 +  # Encourages keeping feet in the air
+        collision_penalty * -0.5 +  # Penalizes knee collisions
+        action_rate_penalty * -0.01 +  # Penalizes sudden changes in action
+        torque_penalty * -0.00001 +  # Penalizes high torque usage
+        joint_acc_penalty * -2.5e-7  # Penalizes excessive joint acceleration
+    )
+
+    # Reward components dictionary
+    reward_components = {
+        "lin_vel_tracking": lin_vel_tracking_reward,
+        "ang_vel_tracking": ang_vel_tracking_reward,
+        "feet_air_time_reward": feet_air_time_reward,
+        "collision_penalty": collision_penalty,
+        "action_rate_penalty": action_rate_penalty,
+        "torque_penalty": torque_penalty,
+        "joint_acc_penalty": joint_acc_penalty,
+    }
+
+    return total_reward, reward_components

@@ -23,6 +23,8 @@ env:
     numLevels: 12
     numTerrains: 20
     terrainColTypes: 
+    - pyramid_stairs_up_terrain_inner_square
+    - pyramid_stairs_up_terrain_inner_square
     - pyramid_stairs_up
     - pyramid_stairs_up
     - pyramid_stairs_up

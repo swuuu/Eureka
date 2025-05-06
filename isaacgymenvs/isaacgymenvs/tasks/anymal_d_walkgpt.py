@@ -45,6 +45,9 @@ class AnymalDWalkGPT(VecTask):
         self.rew_scales["stumble"] = self.cfg["env"]["learn"]["feetStumbleRewardScale"]
         self.rew_scales["action_rate"] = self.cfg["env"]["learn"]["actionRateRewardScale"]
         self.rew_scales["hip"] = self.cfg["env"]["learn"]["hipRewardScale"]
+        self.rew_scales["feet_contact_forces"] = self.cfg["env"]["learn"]["contactForceRewardScale"]
+        self.rew_scales["joint_vel"] = self.cfg["env"]["learn"]["jointVel"]
+        self.rew_scales["stand_still"] = self.cfg["env"]["learn"]["standStill"]
 
         self.command_x_range = self.cfg["env"]["randomCommandVelocityRanges"]["linear_x"]
         self.command_y_range = self.cfg["env"]["randomCommandVelocityRanges"]["linear_y"]
@@ -117,19 +120,31 @@ class AnymalDWalkGPT(VecTask):
         torch_zeros = lambda : torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
         self.episode_sums = {"lin_vel_xy": torch_zeros(), "lin_vel_z": torch_zeros(), "ang_vel_z": torch_zeros(), "ang_vel_xy": torch_zeros(),
                              "orient": torch_zeros(), "torques": torch_zeros(), "joint_acc": torch_zeros(), "base_height": torch_zeros(),
-                             "air_time": torch_zeros(), "collision": torch_zeros(), "stumble": torch_zeros(), "action_rate": torch_zeros(), "hip": torch_zeros()}
+                             "air_time": torch_zeros(), "collision": torch_zeros(), "stumble": torch_zeros(), "action_rate": torch_zeros(), "hip": torch_zeros(),
+                             "dof_vel": torch_zeros(), "stand_still": torch_zeros(), "contact_forces": torch_zeros()}
 
-        self.reset_idx(torch.arange(self.num_envs, device=self.device))
-        self.init_done = True
+        self.swing_duration = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
+        self.stance_duration = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
+        self.duty_factor = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
+        self.contact_prev = torch.ones(self.num_envs, 4, dtype=torch.bool, device=self.device, requires_grad=False)
+        self.stride_duration = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
+        self.stride_frequency = torch.zeros(self.num_envs, 4, dtype=torch.float, device=self.device, requires_grad=False)
+        self.last_contacts = torch.zeros(self.num_envs, len(self.feet_indices), dtype=torch.bool, device=self.device, requires_grad=False)
 
         if cfg["env"]["control"]["useActuactorNetwork"]:
             asset_root = os.path.join(os.path.dirname(os.path.abspath(__file__)), '../../assets')
             asset_file = self.cfg["env"]["control"]["actuatorNetFile"]
             actuator_network_path = os.path.join(asset_root, asset_file)
             self.actuator_network = torch.jit.load(actuator_network_path).to(self.device)
-            self.sea_input = torch.zeros(self.num_envs*self.num_actions, 1, 2, device=self.device, requires_grad=False)
-            self.sea_hidden_state = torch.zeros(2, self.num_envs*self.num_actions, 8, device=self.device, requires_grad=False)
-            self.sea_cell_state = torch.zeros(2, self.num_envs*self.num_actions, 8, device=self.device, requires_grad=False)
+            self.des_joint_pos_error_hist = torch.zeros(3, self.num_envs*self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+            self.joint_vel_hist = torch.zeros(3, self.num_envs*self.num_actions, dtype=torch.float, device=self.device, requires_grad=False)
+            self.time_elapsed_act_hist = torch.zeros(self.num_envs, dtype=torch.float, device=self.device, requires_grad=False)
+            self.act_hist_update_rate = 0.01 # seconds
+            self.des_joint_pos_error_hist_per_env = self.des_joint_pos_error_hist.view(3, self.num_envs, self.num_actions)
+            self.joint_vel_hist_per_env = self.joint_vel_hist.view(3, self.num_envs, self.num_actions)
+        
+        self.reset_idx(torch.arange(self.num_envs, device=self.device))
+        self.init_done = True
 
     def create_sim(self):
         self.up_axis_idx = 2 # index of up axis: Y=1, Z=2
@@ -281,7 +296,7 @@ class AnymalDWalkGPT(VecTask):
                                     ), dim=-1)
 
     def compute_reward(self):
-        self.rew_buf[:], self.rew_dict = compute_reward(self.root_states, self.base_lin_vel, self.base_ang_vel, self.commands, self.dof_pos, self.dof_vel, self.actions, self.projected_gravity)
+        self.rew_buf[:], self.rew_dict = compute_reward(self.base_lin_vel, self.base_ang_vel, self.commands, self.dof_pos, self.default_dof_pos, self.dof_vel, self.actions)
         self.extras['gpt_reward'] = self.rew_buf.mean()
         for rew_state in self.rew_dict: self.extras[rew_state] = self.rew_dict[rew_state].mean()
         lin_vel_error = torch.sum(torch.square(self.commands[:, :2] - self.base_lin_vel[:, :2]), dim=1)
@@ -298,7 +313,9 @@ class AnymalDWalkGPT(VecTask):
 
         rew_torque = torch.sum(torch.square(self.torques), dim=1) * self.rew_scales["torque"]
 
-        rew_joint_acc = torch.sum(torch.square(self.last_dof_vel - self.dof_vel), dim=1) * self.rew_scales["joint_acc"]
+        rew_dof_vel = torch.sum(torch.square(self.dof_vel), dim=1) * self.rew_scales["joint_vel"]
+
+        rew_joint_acc = torch.sum(torch.square(self.last_dof_vel - self.dof_vel) / self.dt, dim=1) * self.rew_scales["joint_acc"]
 
         knee_contact = torch.norm(self.contact_forces[:, self.knee_indices, :], dim=2) > 1.
         rew_collision = torch.sum(knee_contact, dim=1) * self.rew_scales["collision"] # sum vs any ?
@@ -315,10 +332,15 @@ class AnymalDWalkGPT(VecTask):
         rew_airTime *= torch.norm(self.commands[:, :2], dim=1) > 0.1 #no reward for zero command
         self.feet_air_time *= ~contact
 
+        rew_stand_still = torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1) * self.rew_scales["stand_still"]
+
+        max_contact_force = 500
+        rew_contact_forces = torch.sum((torch.norm(self.contact_forces[:, self.feet_indices, :], dim=-1) - max_contact_force).clip(min=0.), dim=1) * self.rew_scales["feet_contact_forces"]
+
         rew_hip = torch.sum(torch.abs(self.dof_pos[:, [0, 3, 6, 9]] - self.default_dof_pos[:, [0, 3, 6, 9]]), dim=1)* self.rew_scales["hip"]
 
         self.rew_buf = rew_lin_vel_xy + rew_ang_vel_z + rew_lin_vel_z + rew_ang_vel_xy + rew_orient + rew_base_height +\
-                    rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_airTime + rew_hip + rew_stumble
+                    rew_torque + rew_joint_acc + rew_collision + rew_action_rate + rew_airTime + rew_hip + rew_stumble + rew_dof_vel + rew_stand_still + rew_contact_forces
         self.rew_buf = torch.clip(self.rew_buf, min=0., max=None)
 
         self.rew_buf += self.rew_scales["termination"] * self.reset_buf * ~self.timeout_buf
@@ -335,7 +357,13 @@ class AnymalDWalkGPT(VecTask):
         self.episode_sums["action_rate"] += rew_action_rate
         self.episode_sums["air_time"] += rew_airTime
         self.episode_sums["base_height"] += rew_base_height
+        self.episode_sums["dof_vel"] += rew_dof_vel
+        self.episode_sums["stand_still"] += rew_stand_still
+        self.episode_sums["contact_forces"] += rew_contact_forces
         self.episode_sums["hip"] += rew_hip
+
+        consecutive_successes = -(lin_vel_error + ang_vel_error).mean()
+        self.extras['consecutive_successes'] = consecutive_successes
 
     def reset_idx(self, env_ids):
         positions_offset = torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof), device=self.device)
@@ -379,6 +407,9 @@ class AnymalDWalkGPT(VecTask):
             self.episode_sums[key][env_ids] = 0.
         self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
 
+        self.des_joint_pos_error_hist_per_env[:, env_ids] = 0.
+        self.joint_vel_hist_per_env[:, env_ids] = 0.
+
     def update_terrain_level(self, env_ids):
         if not self.init_done or not self.curriculum:
             return
@@ -391,15 +422,34 @@ class AnymalDWalkGPT(VecTask):
     def push_robots(self):
         self.root_states[:, 7:9] = torch_rand_float(-1., 1., (self.num_envs, 2), device=self.device) # lin vel x/y
         self.gym.set_actor_root_state_tensor(self.sim, gymtorch.unwrap_tensor(self.root_states))
+    
+    def update_command_history(self, actions):
+        if torch.all(self.des_joint_pos_error_hist == 0): # initialize at t=0
+            self.des_joint_pos_error_hist[:, :] = (actions * self.cfg["env"]["control"]["actionScale"] + self.default_dof_pos - self.dof_pos).flatten()
+            self.joint_vel_hist[:, :] = self.dof_vel.flatten() 
+        else: 
+            self.time_elapsed_act_hist += self.dt
+            envs_to_update_act_hist = (self.time_elapsed_act_hist > self.act_hist_update_rate).nonzero(as_tuple=False).flatten()
+            self.time_elapsed_act_hist[envs_to_update_act_hist] = 0.
+            self.des_joint_pos_error_hist_per_env[:, envs_to_update_act_hist] = torch.roll(self.des_joint_pos_error_hist_per_env[:, envs_to_update_act_hist], shifts=1, dims=0)
+            self.des_joint_pos_error_hist_per_env[0, envs_to_update_act_hist] = (actions * self.cfg["env"]["control"]["actionScale"] + self.default_dof_pos - self.dof_pos)[envs_to_update_act_hist]
+            self.joint_vel_hist_per_env[:, envs_to_update_act_hist] = torch.roll(self.joint_vel_hist_per_env[:, envs_to_update_act_hist], shifts=1, dims=0)
+            self.joint_vel_hist_per_env[0, envs_to_update_act_hist] = self.dof_vel[envs_to_update_act_hist]
 
     def pre_physics_step(self, actions):
         self.actions = actions.clone().to(self.device)
         for i in range(self.decimation):
             if self.cfg["env"]["control"]["useActuactorNetwork"]:
                 with torch.inference_mode():
-                    self.sea_input[:, 0, 0] = (actions * self.cfg["env"]["control"]["actionScale"] + self.default_dof_pos - self.dof_pos).flatten()
-                    self.sea_input[:, 0, 1] = self.dof_vel.flatten()
-                    torques, (self.sea_hidden_state[:], self.sea_cell_state[:]) = self.actuator_network(self.sea_input, (self.sea_hidden_state, self.sea_cell_state))
+                    self.update_command_history(actions)
+                    actuator_input = torch.stack([self.joint_vel_hist[0],
+                                                self.joint_vel_hist[1],
+                                                self.joint_vel_hist[2], 
+                                                self.des_joint_pos_error_hist[0],
+                                                self.des_joint_pos_error_hist[1],
+                                                self.des_joint_pos_error_hist[2]],
+                                                dim=1)
+                    torques = self.actuator_network(actuator_input)
             else:
                 torques = torch.clip(self.Kp*(self.action_scale*self.actions + self.default_dof_pos - self.dof_pos) - self.Kd*self.dof_vel,
                                     -80., 80.)
@@ -428,8 +478,12 @@ class AnymalDWalkGPT(VecTask):
         heading = torch.atan2(forward[:, 1], forward[:, 0])
         self.commands[:, 2] = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
 
+        zero_command_movements = torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+        self.extras["movements_at_0_velocity"] = torch.mean(zero_command_movements)
+
         self.check_termination()
         self.compute_reward()
+        self.compute_gait_metrics()
         env_ids = self.reset_buf.nonzero(as_tuple=False).flatten()
         if len(env_ids) > 0:
             self.reset_idx(env_ids)
@@ -492,6 +546,47 @@ class AnymalDWalkGPT(VecTask):
 
         return heights.view(self.num_envs, -1) * self.terrain.vertical_scale
 
+    def compute_gait_metrics(self):
+        contact = self.contact_forces[:, self.feet_indices, 2] > 1.
+
+        is_moving = (torch.norm(self.commands[:, :2], dim=1) > 0.1).unsqueeze(1).expand(-1, 4)
+        new_gait_cycle = contact & (~self.contact_prev) & is_moving
+        self.contact_prev = contact.clone()  # Update previous frame contact state
+
+        self.swing_duration += (self.dt * torch.logical_not(contact))
+        self.stance_duration += (self.dt * contact)
+
+        self.duty_factor[new_gait_cycle] = self.stance_duration[new_gait_cycle] / \
+                                           (self.stance_duration[new_gait_cycle] + self.swing_duration[new_gait_cycle] + 1e-8)
+
+        is_standing = torch.norm(self.commands[:, :2], dim=1) <= 0.1
+        self.swing_duration[is_standing] = 0.
+        self.stance_duration[is_standing] = 0.
+
+        mask = self.duty_factor > 0.
+        if mask.sum() > 0:
+            self.extras['duty_factor'] = self.duty_factor[mask].mean()
+        else:
+            self.extras['duty_factor'] = torch.tensor(0.0, device=self.device)
+
+        self.stride_duration[new_gait_cycle] = self.stance_duration[new_gait_cycle] + self.swing_duration[new_gait_cycle]
+        self.stride_frequency[new_gait_cycle] = 1.0 / (self.stride_duration[new_gait_cycle] + 1e-8)
+
+        self.stride_duration[is_standing] = 0.
+        self.stride_frequency[is_standing] = 0.
+
+        mask = self.stride_frequency > 0.
+        if mask.sum() > 0:
+            self.extras['stride_frequency'] = self.stride_frequency[mask].mean()
+        else:
+            self.extras['stride_frequency'] = torch.tensor(0.0, device=self.device)
+
+        self.swing_duration[new_gait_cycle] = 0.
+        self.stance_duration[new_gait_cycle] = 0.
+
+
+
+
 @torch.jit.script
 def quat_apply_yaw(quat, vec):
     quat_yaw = quat.clone().view(-1, 4)
@@ -510,50 +605,67 @@ import math
 import torch
 from torch import Tensor
 @torch.jit.script
-def compute_reward(root_states: torch.Tensor, 
-                   base_lin_vel: torch.Tensor, 
-                   base_ang_vel: torch.Tensor, 
-                   commands: torch.Tensor,
-                   dof_pos: torch.Tensor, 
-                   dof_vel: torch.Tensor, 
-                   actions: torch.Tensor, 
-                   projected_gravity: torch.Tensor) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
+def compute_reward(
+    base_lin_vel: torch.Tensor,
+    base_ang_vel: torch.Tensor,
+    commands: torch.Tensor,
+    dof_pos: torch.Tensor,
+    default_dof_pos: torch.Tensor,
+    dof_vel: torch.Tensor,
+    actions: torch.Tensor
+) -> Tuple[torch.Tensor, Dict[str, torch.Tensor]]:
     
-    # Reward component weights
-    velocity_weight = 2.0
-    stability_weight = 1.0
-    energy_efficiency_weight = 0.5
-    smoothness_weight = 0.5
-    command_alignment_weight = 1.5
+    # Parameters for transformation
+    velocity_tracking_temp = 0.5
+    foot_swing_temp = 0.3
+    base_stability_temp = 0.3  # Slightly increased to enhance its influence
+    energy_penalty_temp = 1.0  # Significantly increased to emphasize energy efficiency
+    stride_frequency_temp = 0.5
 
-    # Velocity alignment reward - reward for aligning the linear and angular velocity to the desired commands
-    lin_vel_error = torch.norm(base_lin_vel - commands[:, :2], p=2, dim=1)
-    ang_vel_error = torch.abs(base_ang_vel - commands[:, 2])
-    
-    velocity_alignment_reward = torch.exp(-velocity_weight * lin_vel_error) + torch.exp(-velocity_weight * ang_vel_error)
+    # Velocity tracking reward
+    command_lin_vel = commands[:, :2]
+    lin_vel_error = torch.norm(command_lin_vel - base_lin_vel[:, :2], dim=1)
+    velocity_tracking_reward = torch.exp(-velocity_tracking_temp * lin_vel_error)
 
-    # Stability reward - encouraging lower oscillations or erratic body motions
-    stability_reward = torch.exp(-stability_weight * torch.norm(projected_gravity, dim=1))
+    # Foot swing reward
+    foot_swing_error = torch.mean(torch.abs(dof_pos - default_dof_pos), dim=1)
+    foot_swing_reward = torch.exp(-foot_swing_temp * foot_swing_error)
 
-    # Energy efficiency reward - penalizing large joint velocities and actuations
-    energy_efficiency_reward = torch.exp(-energy_efficiency_weight * torch.norm(dof_vel, p=1, dim=1))
+    # Base stability reward
+    base_stability_error = torch.norm(base_ang_vel, dim=1)
+    base_stability_reward = torch.exp(-base_stability_temp * base_stability_error)
 
-    # Smoothness reward - penalizing rapid actions to encourage smooth motion
-    smoothness_reward = torch.exp(-smoothness_weight * torch.norm(actions[:, 1:] - actions[:, :-1], p=2, dim=1))
+    # Enhanced energy consumption penalty
+    energy_penalty = torch.sum(actions**2, dim=1)
+    energy_penalty_reward = torch.exp(-energy_penalty_temp * energy_penalty)
 
-    # Command alignment reward - rewards alignment with the command velocities
-    command_alignment = torch.exp(-command_alignment_weight * lin_vel_error) + torch.exp(-command_alignment_weight * ang_vel_error)
+    # Encourage proper duty factor
+    duty_factor_error = torch.clamp(0.5 - torch.mean((dof_vel > 0).float(), dim=1), min=0.0)
+    duty_factor_reward = torch.exp(-1.0 * duty_factor_error)
 
-    # Total reward
-    total_reward = velocity_alignment_reward + stability_reward + energy_efficiency_reward + smoothness_reward + command_alignment
-    
-    # Reward components
+    # Revised stride frequency reward to encourage target range
+    stride_frequency = 2 * torch.mean(torch.abs(dof_vel), dim=1) / torch.max(dof_vel, dim=1).values
+    stride_frequency_error = torch.abs(1.0 - stride_frequency / 1.25)
+    stride_frequency_reward = torch.exp(-stride_frequency_temp * stride_frequency_error)
+
+    # Total reward computation
+    total_reward = (
+        velocity_tracking_reward
+        + 0.5 * foot_swing_reward
+        + base_stability_reward
+        - 0.5 * energy_penalty_reward  # Adjusted weight for more impact
+        + duty_factor_reward
+        + stride_frequency_reward
+    )
+
+    # Compiling the reward components for debugging
     reward_components = {
-        "velocity_alignment_reward": velocity_alignment_reward,
-        "stability_reward": stability_reward,
-        "energy_efficiency_reward": energy_efficiency_reward,
-        "smoothness_reward": smoothness_reward,
-        "command_alignment": command_alignment,
+        "velocity_tracking_reward": velocity_tracking_reward,
+        "foot_swing_reward": foot_swing_reward,
+        "base_stability_reward": base_stability_reward,
+        "energy_penalty_reward": energy_penalty_reward,
+        "duty_factor_reward": duty_factor_reward,
+        "stride_frequency_reward": stride_frequency_reward,
     }
 
     return total_reward, reward_components

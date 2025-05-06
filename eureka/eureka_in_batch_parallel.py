@@ -411,53 +411,53 @@ def main(cfg):
     # logging.info(f"Task: {task}, Max Training Success {max_success_overall}, Correlation {max_success_reward_correlation_overall}, Best Reward Code Path: {max_reward_code_path}")
     logging.info(f"Task: {task}, Max Training Success {max_success_overall}, Best Reward Code Path: {max_reward_code_path}")
     
-    logging.info(f"Evaluating best reward code {cfg.num_eval} times")
-    shutil.copy(max_reward_code_path, output_file)
+    # logging.info(f"Evaluating best reward code {cfg.num_eval} times")
+    # shutil.copy(max_reward_code_path, output_file)
     
-    eval_runs = []
-    for i in range(cfg.num_eval):
-        if not cfg.run_on_multiple_GPUs: set_freest_gpu()
+    # eval_runs = []
+    # for i in range(cfg.num_eval):
+    #     if not cfg.run_on_multiple_GPUs: set_freest_gpu()
         
-        # Execute the python file with flags
-        rl_filepath = f"reward_code_eval{i}.txt"
-        with open(rl_filepath, 'w') as f:
-            process = subprocess.Popen(['python', '-u', f'{ISAAC_ROOT_DIR}/train.py',  
-                                        'hydra/output=subprocess',
-                                        f'task={task}{suffix}', f'wandb_activate={cfg.use_wandb}',
-                                        f'wandb_entity={cfg.wandb_username}', f'wandb_project={cfg.wandb_project}',
-                                        f'headless={not cfg.capture_video}', f'capture_video={cfg.capture_video}', 'force_render=False', f'seed={i}',
-                                        ],
-                                        stdout=f, stderr=f)
+    #     # Execute the python file with flags
+    #     rl_filepath = f"reward_code_eval{i}.txt"
+    #     with open(rl_filepath, 'w') as f:
+    #         process = subprocess.Popen(['python', '-u', f'{ISAAC_ROOT_DIR}/train.py',  
+    #                                     'hydra/output=subprocess',
+    #                                     f'task={task}{suffix}', f'wandb_activate={cfg.use_wandb}',
+    #                                     f'wandb_entity={cfg.wandb_username}', f'wandb_project={cfg.wandb_project}',
+    #                                     f'headless={not cfg.capture_video}', f'capture_video={cfg.capture_video}', 'force_render=False', f'seed={i}',
+    #                                     ],
+    #                                     stdout=f, stderr=f)
 
-        block_until_training(rl_filepath)
-        eval_runs.append(process)
+    #     block_until_training(rl_filepath)
+    #     eval_runs.append(process)
 
-    reward_code_final_successes = []
-    reward_code_correlations_final = []
-    for i, rl_run in enumerate(eval_runs):
-        rl_run.communicate()
-        rl_filepath = f"reward_code_eval{i}.txt"
-        with open(rl_filepath, 'r') as f:
-            stdout_str = f.read() 
-        lines = stdout_str.split('\n')
-        for i, line in enumerate(lines):
-            if line.startswith('Tensorboard Directory:'):
-                break 
-        tensorboard_logdir = line.split(':')[-1].strip() 
-        tensorboard_logs = load_tensorboard_logs(tensorboard_logdir)
-        max_success = max(tensorboard_logs['consecutive_successes'])
-        reward_code_final_successes.append(max_success)
+    # reward_code_final_successes = []
+    # reward_code_correlations_final = []
+    # for i, rl_run in enumerate(eval_runs):
+    #     rl_run.communicate()
+    #     rl_filepath = f"reward_code_eval{i}.txt"
+    #     with open(rl_filepath, 'r') as f:
+    #         stdout_str = f.read() 
+    #     lines = stdout_str.split('\n')
+    #     for i, line in enumerate(lines):
+    #         if line.startswith('Tensorboard Directory:'):
+    #             break 
+    #     tensorboard_logdir = line.split(':')[-1].strip() 
+    #     tensorboard_logs = load_tensorboard_logs(tensorboard_logdir)
+    #     max_success = max(tensorboard_logs['consecutive_successes'])
+    #     reward_code_final_successes.append(max_success)
 
-        # # TODO: Comment this block!
-        # if "gt_reward" in tensorboard_logs and "gpt_reward" in tensorboard_logs:
-        #     gt_reward = np.array(tensorboard_logs["gt_reward"])
-        #     gpt_reward = np.array(tensorboard_logs["gpt_reward"])
-        #     reward_correlation = np.corrcoef(gt_reward, gpt_reward)[0, 1]
-        #     reward_code_correlations_final.append(reward_correlation)
+    #     # # TODO: Comment this block!
+    #     # if "gt_reward" in tensorboard_logs and "gpt_reward" in tensorboard_logs:
+    #     #     gt_reward = np.array(tensorboard_logs["gt_reward"])
+    #     #     gpt_reward = np.array(tensorboard_logs["gpt_reward"])
+    #     #     reward_correlation = np.corrcoef(gt_reward, gpt_reward)[0, 1]
+    #     #     reward_code_correlations_final.append(reward_correlation)
 
-    logging.info(f"Final Success Mean: {np.mean(reward_code_final_successes)}, Std: {np.std(reward_code_final_successes)}, Raw: {reward_code_final_successes}")
-    # logging.info(f"Final Correlation Mean: {np.mean(reward_code_correlations_final)}, Std: {np.std(reward_code_correlations_final)}, Raw: {reward_code_correlations_final}")
-    np.savez('final_eval.npz', reward_code_final_successes=reward_code_final_successes, reward_code_correlations_final=reward_code_correlations_final)
+    # logging.info(f"Final Success Mean: {np.mean(reward_code_final_successes)}, Std: {np.std(reward_code_final_successes)}, Raw: {reward_code_final_successes}")
+    # # logging.info(f"Final Correlation Mean: {np.mean(reward_code_correlations_final)}, Std: {np.std(reward_code_correlations_final)}, Raw: {reward_code_correlations_final}")
+    # np.savez('final_eval.npz', reward_code_final_successes=reward_code_final_successes, reward_code_correlations_final=reward_code_correlations_final)
 
 
 if __name__ == "__main__":

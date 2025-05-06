@@ -1,5 +1,5 @@
 Please carefully analyze the policy feedback and provide a new, improved reward function that can better solve the task. When designing a new reward function, consider what signals best indicate successful stair climbing.
-- What factors help the robot maintain stability while climbing increasing step heights?
+- What factors help the robot maintain stability while climbing increasing step heights? (e.g., lifting its feet higher. Unfortunately, there are no variables in the code that reads the XYZ coordinates of each feet, you can play with contacts)
 - What factors might indicate inefficient or unstable climbing?
 Some helpful tips for analyzing the policy feedback:
     (1) The task-score represents the average terrain difficulty level that the robots have solved. An increasing difficulty primarily means larger step heights. The higher the better. If the task-score is always at 0, please re-write the reward function.
@@ -8,5 +8,5 @@ Some helpful tips for analyzing the policy feedback:
         (b) Re-writing the reward component 
         (c) Discarding the reward component
     (3) If some reward components have significantly larger magnitudes, consider whether this is necessary for task success. Only re-scale them if smaller components are getting ignored or if training is unstable. Otherwise, dominant rewards might be appropriate.
-    (4) We want to achieve a biomechanically reasonable walking gait. If the policy feedback has the duty factor and stride frequency metrics, please try to make the duty factor greater than 0.5 and the stride frequency between 1-1.5Hz (standard ranges of a walking gait). Only optimize this if the task score is above 9.
+    (4) We want to achieve a biomechanically reasonable walking gait. If the policy feedback has the duty factor and stride frequency metrics, please try to make the duty factor greater than 0.5 and the stride frequency between 1-1.5Hz (standard ranges of a walking gait). Only optimize this if the task score is above 6.
 Please analyze each existing reward component in the suggested manner above first, and then write the reward function code. 

@@ -22,7 +22,48 @@ env:
     mapWidth: 8.
     numLevels: 10
     numTerrains: 20
-    terrainColTypes: ["smooth_pyramid_slope", "rough_pyramid_slope", "discrete", "flat", "smooth_pyramid_slope", "rough_pyramid_slope", "discrete", "flat", "smooth_pyramid_slope", "rough_pyramid_slope", "smooth_pyramid_slope", "rough_pyramid_slope", "discrete", "flat", "smooth_pyramid_slope", "rough_pyramid_slope", "discrete", "flat", "smooth_pyramid_slope", "rough_pyramid_slope"]
+    terrainColTypes: 
+    - "flat"
+    - "flat"
+    - "flat"
+    - "flat"
+    - "flat"
+    - "flat"
+    - "flat"
+    - "flat"
+    - "flat"
+    - "flat"
+    - "smooth_pyramid_slope"
+    - "rough_pyramid_slope"
+    - "smooth_pyramid_slope"
+    - "rough_pyramid_slope"
+    - "discrete"
+    - "smooth_pyramid_slope"
+    - "rough_pyramid_slope"
+    - "discrete"
+    - "smooth_pyramid_slope"
+    - "rough_pyramid_slope"
+    # terrainColTypes: 
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
+    # - "flat"
     # terrainProportions: [0.1, 0.1, 0.35, 0.25, 0.2]
     # tri mesh only:
     slopeTreshold: 0.5

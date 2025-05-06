@@ -19,7 +19,7 @@ env:
     - 0.0
   control:
     actionScale: 0.5
-    actuatorNetFile: actuator_nets/anydrive_v3_lstm.pt
+    actuatorNetFile: actuator_nets/anydrive_3_6_anymal_d.pt
     damping: 2.0
     decimation: 4
     stiffness: 80.0
@@ -105,8 +105,8 @@ env:
     slopeTreshold: 0.5
     staticFriction: 1.0
     terrainColTypes:
-    - pyramid_stairs_up
-    - pyramid_stairs_up
+    - pyramid_stairs_up_terrain_inner_square
+    - pyramid_stairs_up_terrain_inner_square
     - pyramid_stairs_up
     - pyramid_stairs_up
     - pyramid_stairs_up
@@ -121,8 +121,8 @@ env:
     - pyramid_stairs_up
     - rough_pyramid_slope
     - discrete
-    - pyramid_stairs_up_terrain_inner_square
-    - pyramid_stairs_up_terrain_inner_square
+    - rough_pyramid_slope
+    - discrete
     - pyramid_stairs_up_terrain_inner_square
     - pyramid_stairs_up_terrain_inner_square
     terrainType: trimesh

@@ -27,10 +27,12 @@ class TerrainsForPolicyPerGait():
         self.terrain_types = cfg["terrainColTypes"]
 
         self.height_field_raw = np.zeros((self.tot_rows , self.tot_cols), dtype=np.int16)
-        if cfg["curriculum"]:
-            self.curiculum(num_robots, num_terrains=self.env_cols, num_levels=self.env_rows)
-        else:
-            self.randomized_terrain()   
+        # if cfg["curriculum"]:
+        #     self.curiculum(num_robots, num_terrains=self.env_cols, num_levels=self.env_rows)
+        # else:
+        #     self.randomized_terrain()   
+
+        self.curiculum(num_robots, num_terrains=self.env_cols, num_levels=self.env_rows)
         self.heightsamples = self.height_field_raw
         self.vertices, self.triangles = terrain_utils.convert_heightfield_to_trimesh(self.height_field_raw, self.horizontal_scale, self.vertical_scale, cfg["slopeTreshold"])
 
@@ -101,6 +103,14 @@ class TerrainsForPolicyPerGait():
             terrain_utils.wave_terrain(terrain, num_waves=num_waves, amplitude=amplitude)
         elif choice == "flat":
             pass
+        elif choice == "pyramid_stairs_down_terrain_inner_square":
+            pyramid_area_size = 7 # terrain.width * 0.25
+            if not use_fixed_step_width:
+                step_width = stair_width[0] + (stair_width[1] - stair_width[0]) * difficulty
+            else:
+                step_width = constant_step_width
+            step_height = stair_height[0] + (stair_height[1] - stair_height[0]) * difficulty
+            pyramid_stairs_terrain_inner_square(terrain, step_width=step_width, step_height=step_height, platform_size=platform_size, pyramid_area_size=pyramid_area_size)
         elif choice == "pyramid_stairs_up_terrain_inner_square":
             pyramid_area_size = 7 # terrain.width * 0.25
             if not use_fixed_step_width:

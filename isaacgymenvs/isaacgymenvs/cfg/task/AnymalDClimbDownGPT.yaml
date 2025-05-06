@@ -19,7 +19,7 @@ env:
     - 0.0
   control:
     actionScale: 0.5
-    actuatorNetFile: actuator_nets/anydrive_v3_lstm.pt
+    actuatorNetFile: actuator_nets/anydrive_3_6_anymal_d.pt
     damping: 2.0
     decimation: 4
     stiffness: 80.0
@@ -96,8 +96,8 @@ env:
   terrain:
     curriculum: true
     dynamicFriction: 1.0
-    mapLength: 8.0
-    mapWidth: 8.0
+    mapLength: 17
+    mapWidth: 17
     maxInitMapLevel: 0
     numLevels: 10
     numTerrains: 20
@@ -105,6 +105,8 @@ env:
     slopeTreshold: 0.5
     staticFriction: 1.0
     terrainColTypes:
+    - pyramid_stairs_down_terrain_inner_square
+    - pyramid_stairs_down_terrain_inner_square
     - pyramid_stairs_down
     - pyramid_stairs_down
     - pyramid_stairs_down
@@ -113,8 +115,8 @@ env:
     - pyramid_stairs_down
     - pyramid_stairs_down
     - pyramid_stairs_down
-    - discrete
-    - flat
+    - pyramid_stairs_down_terrain_inner_square
+    - pyramid_stairs_down_terrain_inner_square
     - pyramid_stairs_down
     - pyramid_stairs_down
     - pyramid_stairs_down
@@ -123,8 +125,6 @@ env:
     - pyramid_stairs_down
     - pyramid_stairs_down
     - pyramid_stairs_down
-    - pyramid_stairs_down
-    - discrete
     terrainType: trimesh
   urdfAsset:
     collapseFixedJoints: true

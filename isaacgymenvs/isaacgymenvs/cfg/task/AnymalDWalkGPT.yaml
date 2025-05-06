@@ -19,7 +19,7 @@ env:
     - 0.0
   control:
     actionScale: 0.5
-    actuatorNetFile: actuator_nets/anydrive_v3_lstm.pt
+    actuatorNetFile: actuator_nets/anydrive_3_6_anymal_d.pt
     damping: 2.0
     decimation: 4
     stiffness: 80.0
@@ -50,6 +50,7 @@ env:
     angularVelocityXYRewardScale: -0.05
     angularVelocityZRewardScale: 0.5
     baseHeightRewardScale: -0.0
+    contactForceRewardScale: -0.0
     dofPositionNoise: 0.01
     dofPositionScale: 1.0
     dofVelocityNoise: 1.5
@@ -64,17 +65,19 @@ env:
     heightMeasurementNoise: 0.06
     heightMeasurementScale: 5.0
     hipRewardScale: -0.0
-    jointAccRewardScale: -0.0005
-    kneeCollisionRewardScale: -0.25
+    jointAccRewardScale: -2.5e-07
+    jointVel: -0.0
+    kneeCollisionRewardScale: -0.5
     linearVelocityNoise: 0.1
     linearVelocityScale: 2.0
     linearVelocityXYRewardScale: 1.0
-    linearVelocityZRewardScale: -4.0
+    linearVelocityZRewardScale: -1.5
     noiseLevel: 1.0
     orientationRewardScale: -0.0
     pushInterval_s: 15
     pushRobots: true
     randomizeFriction: true
+    standStill: -0.0
     terminalReward: 0.0
     torqueRewardScale: -1.0e-05
   numActions: 12
@@ -102,24 +105,24 @@ env:
     slopeTreshold: 0.5
     staticFriction: 1.0
     terrainColTypes:
-    - smooth_pyramid_slope
-    - rough_pyramid_slope
-    - discrete
+    - flat
+    - flat
+    - flat
+    - flat
+    - flat
+    - flat
+    - flat
+    - flat
+    - flat
     - flat
     - smooth_pyramid_slope
     - rough_pyramid_slope
-    - discrete
-    - flat
-    - smooth_pyramid_slope
-    - rough_pyramid_slope
     - smooth_pyramid_slope
     - rough_pyramid_slope
     - discrete
-    - flat
     - smooth_pyramid_slope
     - rough_pyramid_slope
     - discrete
-    - flat
     - smooth_pyramid_slope
     - rough_pyramid_slope
     terrainType: trimesh
@@ -128,7 +131,7 @@ env:
     defaultDofDriveMode: 4
     file: urdf/anymal_d/urdf/anymal_d_merged.urdf
     fixBaseLink: false
-    footName: SHANK
+    footName: FOOT
     kneeName: THIGH
   viewer:
     lookat:

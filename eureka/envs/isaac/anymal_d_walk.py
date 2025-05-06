@@ -359,6 +359,8 @@ class AnymalDWalk(VecTask):
         self.episode_sums["contact_forces"] += rew_contact_forces
         self.episode_sums["hip"] += rew_hip
 
+        consecutive_successes = -(lin_vel_error + ang_vel_error).mean()
+        self.extras['consecutive_successes'] = consecutive_successes
 
     def reset_idx(self, env_ids):
         positions_offset = torch_rand_float(0.5, 1.5, (len(env_ids), self.num_dof), device=self.device)
@@ -401,7 +403,6 @@ class AnymalDWalk(VecTask):
             self.extras["episode"]['rew_' + key] = torch.mean(self.episode_sums[key][env_ids]) / self.max_episode_length_s
             self.episode_sums[key][env_ids] = 0.
         self.extras["episode"]["terrain_level"] = torch.mean(self.terrain_levels.float())
-        self.extras['consecutive_successes'] = torch.mean(self.terrain_levels.float())
 
         self.des_joint_pos_error_hist_per_env[:, env_ids] = 0.
         self.joint_vel_hist_per_env[:, env_ids] = 0.
@@ -473,6 +474,9 @@ class AnymalDWalk(VecTask):
         forward = quat_apply(self.base_quat, self.forward_vec)
         heading = torch.atan2(forward[:, 1], forward[:, 0])
         self.commands[:, 2] = torch.clip(0.5*wrap_to_pi(self.commands[:, 3] - heading), -1., 1.)
+
+        zero_command_movements = torch.sum(torch.abs(self.dof_pos - self.default_dof_pos), dim=1) * (torch.norm(self.commands[:, :2], dim=1) < 0.1)
+        self.extras["movements_at_0_velocity"] = torch.mean(zero_command_movements)
 
         self.check_termination()
         self.compute_reward()

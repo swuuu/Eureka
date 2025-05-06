@@ -49,7 +49,7 @@ def modify_python_file(task, filename, output):
         else:
             if in_success and line.strip() == ")":
                 modified_lines.append(line)
-                modified_lines.append("        self.extras['gt_reward'] = self.gt_rew_buf.mean()")
+                # modified_lines.append("        self.extras['gt_reward'] = self.gt_rew_buf.mean()")
                 in_success = False
             else:    
                 modified_lines.append(line)

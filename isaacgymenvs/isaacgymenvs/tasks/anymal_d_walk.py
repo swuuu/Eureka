@@ -339,7 +339,7 @@ class AnymalDWalk(VecTask):
                                     ), dim=-1)
 
     def compute_reward(self):
-        self.rew_buf[:], self.rew_dict = compute_anymal_reward(self.base_lin_vel, 
+        self.rew_buf[:], self.rew_dict = compute_anymal_d_walk_reward(self.base_lin_vel, 
                                                                self.base_ang_vel, 
                                                                self.commands, 
                                                                self.projected_gravity, 
@@ -707,7 +707,7 @@ def wrap_to_pi(angles):
     return angles
 
 @torch.jit.script
-def compute_anymal_reward(
+def compute_anymal_d_walk_reward(
     base_lin_vel: torch.Tensor,
     base_ang_vel: torch.Tensor,
     commands: torch.Tensor,

@@ -297,7 +297,7 @@ class AnymalDClimbUp(VecTask):
                                     ), dim=-1)
 
     def compute_reward(self):
-        self.rew_buf[:], self.rew_dict = compute_anymal_reward(self.base_lin_vel, 
+        self.gt_rew_buf, self.rew_dict = compute_success(self.base_lin_vel, 
                                                                self.base_ang_vel, 
                                                                self.commands, 
                                                                self.projected_gravity, 
@@ -396,7 +396,7 @@ class AnymalDClimbUp(VecTask):
             self.des_joint_pos_error_hist[:, :] = (actions * self.cfg["env"]["control"]["actionScale"] + self.default_dof_pos - self.dof_pos).flatten()
             self.joint_vel_hist[:, :] = self.dof_vel.flatten() 
         else: 
-            self.time_elapsed_act_hist += (self.dt)
+            self.time_elapsed_act_hist += (self.dt / self.decimation)
             envs_to_update_act_hist = (self.time_elapsed_act_hist > self.act_hist_update_rate).nonzero(as_tuple=False).flatten()
             self.time_elapsed_act_hist[envs_to_update_act_hist] = 0.
             self.des_joint_pos_error_hist_per_env[:, envs_to_update_act_hist] = torch.roll(self.des_joint_pos_error_hist_per_env[:, envs_to_update_act_hist], shifts=1, dims=0)
@@ -577,7 +577,7 @@ def wrap_to_pi(angles):
     return angles
 
 @torch.jit.script
-def compute_anymal_reward(
+def compute_success(
     base_lin_vel: torch.Tensor,
     base_ang_vel: torch.Tensor,
     commands: torch.Tensor,

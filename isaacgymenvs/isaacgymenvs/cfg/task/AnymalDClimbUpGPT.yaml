@@ -125,6 +125,8 @@ env:
     - discrete
     - pyramid_stairs_up_terrain_inner_square
     - pyramid_stairs_up_terrain_inner_square
+    - pyramid_stairs_up_terrain_inner_square
+    - pyramid_stairs_up_terrain_inner_square
     terrainType: trimesh
   urdfAsset:
     collapseFixedJoints: true

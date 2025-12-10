@@ -20,6 +20,45 @@ https://github.com/eureka-research/Eureka/assets/21993118/1abb960d-321a-4de9-b31
 
 Large Language Models (LLMs) have excelled as high-level semantic planners for sequential decision-making tasks. However, harnessing them to learn complex low-level manipulation tasks, such as dexterous pen spinning, remains an open problem. We bridge this fundamental gap and present Eureka, a **human-level** reward design algorithm powered by LLMs. Eureka exploits the remarkable zero-shot generation, code-writing, and in-context improvement capabilities of state-of-the-art LLMs, such as GPT-4, to perform in-context evolutionary optimization over reward code. The resulting rewards can then be used to acquire complex skills via reinforcement learning. Eureka generates reward functions that outperform expert human-engineered rewards without any task-specific prompting or pre-defined reward templates. In a diverse suite of 29 open-source RL environments that include 10 distinct robot morphologies, Eureka outperforms human expert on **83\%** of the tasks leading to an average normalized improvement of **52\%**. The generality of Eureka also enables a new gradient-free approach to reinforcement learning from human feedback (RLHF), readily incorporating human oversight to improve the quality and the safety of the generated rewards in context. Finally, using Eureka rewards in a curriculum learning setting, we demonstrate for the first time a simulated five-finger Shadow Hand capable of performing pen spinning tricks, adeptly manipulating a pen in circles at human speed. 
 
+## Personal Extensions in This Fork
+
+This fork extends **Eureka** with additional features for legged-robot locomotion and human-based reward tuning.  
+Below is a summary of the components I implemented:
+
+### New ANYmal-D Locomotion Tasks (Isaac Gym)
+Custom Isaac Gym environments for ANYmal-D, used to train skill-specific locomotion policies:
+- `AnymalDWalk`
+- `AnymalDClimbUp`
+- `AnymalDClimbDown`
+
+**See:**  
+`isaacgymenvs/isaacgymenvs/tasks/*anymal_d*`
+
+### Terrain Generator for Policy-Per-Gait Experiments
+Custom terrain generation pipeline for gait-specific data collection and training.
+
+**See:**  
+`isaacgymenvs/isaacgymenvs/tasks/utils/terrains_for_policy_per_gait.py`
+
+### Human-Feedback Pipeline for Reward Optimization
+Integrated a human-feedback-driven reward refinement loop into Eureka:
+- Batch human feedback pipeline
+- Prompt templates for consistent evaluation
+
+**See:**  
+`eureka/eureka_in_batch_parallel_hf.py`  
+`eureka/utils/prompts/human_feedback*.txt`
+
+### Configurations + Deployment Tools
+Configs and utilities for reproducible training and model export:
+- ANYmal-D environment configs
+- ONNX and TorchScript model export support
+
+**See:**  
+`eureka/cfg/env/anymal_d_*.yaml`  
+`isaacgymenvs/isaacgymenvs/cfg/task/AnymalD*.yaml`
+
+
 # Installation
 Eureka requires Python ≥ 3.8. We have tested on Ubuntu 20.04 and 22.04.
 
